@@ -537,31 +537,6 @@ docker-compose down
 ```
 This stops and removes the containers, networks, and volumes defined in the compose file.
 
-## Missing Implementation / Next Steps
-
-*   **Cartesi Machine Build:** The `build-machine.sh` script needs verification and potentially base images (ROM, kernel) added or mounted. The `cartesi/playground` image capabilities need confirmation.
-*   **Cartesi Template Hash:** The placeholder hash in `deploy/01_deploy_contracts.ts` must be replaced with the actual hash after building the machine.
-*   **`Exchange.sol` - `processMatchResult`:** The logic to **decode** the `resultData` from the Cartesi Machine (expected JSON format from `offchain_logic.py`) and **update on-chain balances/order statuses** needs to be implemented (currently placeholder comments).
-*   **`Exchange.sol` - Cartesi Input:** The `triggerOrderMatching` function needs refinement on how `_inputData` is constructed (e.g., ABI-encoding active order data) and potentially passed via Cartesi drives or off-chain storage if it's large.
-*   **Backend (`server.py`):**
-    *   Implement actual Web3 interactions (commented out) to call `triggerOrderMatching` and `processMatchResult` using an admin key.
-    *   Load contract ABI properly.
-    *   Replace mock DB with actual blockchain state queries (reading deposits, order states from the contract using functions like `getOrder`, `getUserTokenBalance`, `getUserEthBalance`).
-    *   ✅ Securely manage the `ADMIN_PRIVATE_KEY` (implemented via Docker secrets with layered security approach).
-*   **Frontend (`App.tsx`):**
-    *   Implement actual contract interactions using `ethers.js` (or similar) for:
-        *   ✅ Depositing/Withdrawing ETH and Tokens (implemented with `ethers.js` integration).
-        *   ✅ Placing orders directly via `Exchange.sol::placeOrder`.
-        *   ✅ Cancelling orders via `Exchange.sol::cancelOrder`.
-        *   ✅ Fetching real balances and order data from the contract.
-    *   Replace mock addresses/ABIs with deployed ones (potentially loaded from artifacts).
-    *   Improve UI/UX and error handling.
-*   **Configuration:** ✅ Centralized configuration through `.env` file. Project now uses dotenv for all environment variables, with deployer service automatically updating contract addresses after deployment using the `update-env.sh` script. Docker Compose loads these variables throughout the entire application stack.
-*   **Testing:** Add unit tests (Solidity, Python, TypeScript) and integration tests.
-*   **Security:** Perform security audits, add access controls, input validation, and consider potential attack vectors (reentrancy, etc.).
-*   **Error Handling:** Implement robust error handling across all components.
-*   **`Exchange.sol` Deposit/Withdraw:** ✅ Implemented `depositETH`, `withdrawETH`, `depositToken`, `withdrawToken` functions with proper event emission and security checks.
-
 ## Backend API Documentation
 
 The backend API provides several endpoints to interact with the stock exchange system. This API serves both as a convenience layer for the frontend and as a simulation layer for Cartesi operations during development.
@@ -1209,3 +1184,28 @@ The key points illustrated:
 - How the Cartesi machine enables complex matching algorithms off-chain
 - The verification and processing of results back on-chain
 - The complete lifecycle of orders and trades in the system
+
+## Missing Implementation / Next Steps
+
+*   **Cartesi Machine Build:** The `build-machine.sh` script needs verification and potentially base images (ROM, kernel) added or mounted. The `cartesi/playground` image capabilities need confirmation.
+*   **Cartesi Template Hash:** The placeholder hash in `deploy/01_deploy_contracts.ts` must be replaced with the actual hash after building the machine.
+*   **`Exchange.sol` - `processMatchResult`:** The logic to **decode** the `resultData` from the Cartesi Machine (expected JSON format from `offchain_logic.py`) and **update on-chain balances/order statuses** needs to be implemented (currently placeholder comments).
+*   **`Exchange.sol` - Cartesi Input:** The `triggerOrderMatching` function needs refinement on how `_inputData` is constructed (e.g., ABI-encoding active order data) and potentially passed via Cartesi drives or off-chain storage if it's large.
+*   **Backend (`server.py`):**
+    *   Implement actual Web3 interactions (commented out) to call `triggerOrderMatching` and `processMatchResult` using an admin key.
+    *   Load contract ABI properly.
+    *   Replace mock DB with actual blockchain state queries (reading deposits, order states from the contract using functions like `getOrder`, `getUserTokenBalance`, `getUserEthBalance`).
+    *   ✅ Securely manage the `ADMIN_PRIVATE_KEY` (implemented via Docker secrets with layered security approach).
+*   **Frontend (`App.tsx`):**
+    *   Implement actual contract interactions using `ethers.js` (or similar) for:
+        *   ✅ Depositing/Withdrawing ETH and Tokens (implemented with `ethers.js` integration).
+        *   ✅ Placing orders directly via `Exchange.sol::placeOrder`.
+        *   ✅ Cancelling orders via `Exchange.sol::cancelOrder`.
+        *   ✅ Fetching real balances and order data from the contract.
+    *   Replace mock addresses/ABIs with deployed ones (potentially loaded from artifacts).
+    *   Improve UI/UX and error handling.
+*   **Configuration:** ✅ Centralized configuration through `.env` file. Project now uses dotenv for all environment variables, with deployer service automatically updating contract addresses after deployment using the `update-env.sh` script. Docker Compose loads these variables throughout the entire application stack.
+*   **Testing:** Add unit tests (Solidity, Python, TypeScript) and integration tests.
+*   **Security:** Perform security audits, add access controls, input validation, and consider potential attack vectors (reentrancy, etc.).
+*   **Error Handling:** Implement robust error handling across all components.
+*   **`Exchange.sol` Deposit/Withdraw:** ✅ Implemented `depositETH`, `withdrawETH`, `depositToken`, `withdrawToken` functions with proper event emission and security checks.
