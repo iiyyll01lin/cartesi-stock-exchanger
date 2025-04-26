@@ -1,0 +1,126 @@
+version: '3.8'
+
+services:
+  # Local Blockchain Node
+  blockchain:
+    image: node:16
+    working_dir: /app
+    volumes:
+      - ./stock-token-exchange:/app
+    # Install dependencies and start Hardhat node
+    command: >
+      bash -c "npm install && npx hardhat node"
+    ports:
+      - "8545:8545"
+    networks:
+      - stock-exchange-network
+
+  # Smart Contract Deployment Service
+  deployer:
+    image: node:16
+    working_dir: /app
+    volumes:
+      - ./stock-token-exchange:/app
+      - ./.env:/app/.env
+    # Install dependencies, wait for blockchain, deploy contracts and update .env
+    command: >
+      bash -c "npm install && \
+               echo 'Waiting for blockchain node to start...' && \
+               sleep 15 && \
+               npx hardhat deploy --network localhost && \
+               echo 'Deployment finished. Updating environment variables...' && \
+               ./update-env.sh --exchange-address $(cat deployments/localhost/Exchange.json | jq -r '.address') \
+                              --token-address $(cat deployments/localhost/StockToken.json | jq -r '.address') && \
+               echo 'Environment updated. Keeping container alive...' && \
+               tail -f /dev/null"
+    depends_on:
+      - blockchain
+    networks:
+      - stock-exchange-network
+    # Environment variable to enable test token minting during deployment
+    environment:
+      - MINT_TEST_TOKENS=${MINT_TEST_TOKENS:-true}
+      - TEST_TOKEN_AMOUNT=${TEST_TOKEN_AMOUNT:-1000}
+      - CHAIN_ID=${CHAIN_ID:-31337}
+
+  # Backend Server (Flask)
+  backend:
+    build:
+      context: ./stock-token-exchange/backend
+      dockerfile: Dockerfile
+    volumes:
+      - ./stock-token-exchange:/app
+      - ./.env:/app/.env
+    working_dir: /app/backend
+    ports:
+      - "${BACKEND_PORT:-5001}:${BACKEND_PORT:-5001}"
+    environment:
+      # Flask specific environment variables
+      - FLASK_APP=${FLASK_APP:-server.py}
+      - FLASK_DEBUG=${FLASK_DEBUG:-1}
+      # Blockchain connection details
+      - EXCHANGE_CONTRACT_ADDRESS=${EXCHANGE_CONTRACT_ADDRESS}
+      - STOCK_TOKEN_ADDRESS=${STOCK_TOKEN_ADDRESS}
+      - NODE_URL=${NODE_URL:-http://blockchain:8545}
+      - CHAIN_ID=${CHAIN_ID:-31337}
+      # Optional environment variables
+      - MAX_ORDERS_PER_BATCH=${MAX_ORDERS_PER_BATCH:-100}
+      - BACKEND_PORT=${BACKEND_PORT:-5001}
+    secrets:
+      - admin_private_key
+    depends_on:
+      - deployer
+    networks:
+      - stock-exchange-network
+
+  # Frontend Server (React)
+  frontend:
+    image: node:16
+    working_dir: /app
+    volumes:
+      - ./stock-token-exchange:/app
+      - ./.env:/app/.env
+    # Change to frontend directory, install dependencies, start dev server
+    command: >
+      bash -c "cd frontend && \
+               npm install && \
+               export REACT_APP_CHAIN_ID=${CHAIN_ID:-31337} && \
+               export REACT_APP_EXCHANGE_ADDRESS=${EXCHANGE_CONTRACT_ADDRESS} && \
+               export REACT_APP_STOCK_TOKEN_ADDRESS=${STOCK_TOKEN_ADDRESS} && \
+               export REACT_APP_BACKEND_URL=${REACT_APP_BACKEND_URL:-http://localhost:5001} && \
+               npm start"
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - stock-exchange-network
+    environment:
+      # Environment variables for React app
+      - REACT_APP_BACKEND_URL=${REACT_APP_BACKEND_URL:-http://localhost:5001}
+      - WDS_SOCKET_PORT=${WDS_SOCKET_PORT:-3000}
+
+  # Cartesi Environment (for building/running the machine)
+  cartesi:
+    # Use an image with Cartesi tools
+    image: ${CARTESI_PLAYGROUND_IMAGE:-cartesi/playground:0.5.0}
+    volumes:
+      - ./stock-token-exchange:/app
+      - ./.env:/app/.env
+    working_dir: /app
+    # Example command: Build the machine then keep container alive
+    command: >
+      bash -c "echo 'Cartesi environment container started.' && \
+               echo 'To build the machine, run: docker-compose exec cartesi bash -c \"cd cartesi-machine && ./build-machine.sh\"' && \
+               echo 'After building, update the template hash with: ./update-env.sh --template-hash YOUR_TEMPLATE_HASH' && \
+               tail -f /dev/null"
+    networks:
+      - stock-exchange-network
+
+networks:
+  stock-exchange-network:
+    driver: bridge
+
+secrets:
+  admin_private_key:
+    file: ./secrets/admin_private_key.txt

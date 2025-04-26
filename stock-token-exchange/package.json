@@ -1,0 +1,36 @@
+{
+  "name": "stock-token-exchange",
+  "version": "1.0.0",
+  "description": "Stock Token Exchange with Cartesi for off-chain computation",
+  "main": "index.js",
+  "dependencies": {
+    "@cartesi/compute-sdk": "1.3.0",
+    "@nomicfoundation/hardhat-toolbox": "^2.0.2",
+    "@openzeppelin/contracts": "^4.8.2",
+    "dotenv": "^16.0.3"
+  },
+  "devDependencies": {
+    "ethers": "5.4.7",
+    "hardhat": "^2.14.0",
+    "hardhat-deploy": "^0.11.26",
+    "hardhat-deploy-ethers": "^0.3.0-beta.13",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.0.4"
+  },
+  "scripts": {
+    "build": "hardhat compile",
+    "deploy": "hardhat deploy --network localhost",
+    "console": "hardhat console --network localhost",
+    "test": "hardhat test",
+    "build-machine": "cd cartesi-machine && ./build-machine.sh"
+  },
+  "keywords": [
+    "cartesi",
+    "blockchain",
+    "dex",
+    "exchange",
+    "stock-token"
+  ],
+  "author": "",
+  "license": "MIT"
+}
