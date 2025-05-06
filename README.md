@@ -18,18 +18,18 @@ The exchange allows users to deposit ETH and specific stock tokens (like AAPL, r
 
 ## Key Components
 
-*   **Docker (`docker-compose.yml`, `backend/Dockerfile`):** Defines the multi-container environment including a local blockchain, contract deployer, backend API, frontend server, and a Cartesi playground container for building/interacting with the Cartesi machine.
-*   **Solidity Contracts (`contracts/`):**
-    *   `StockToken.sol`: A standard ERC20 token contract (using OpenZeppelin) representing a tradable stock (e.g., AAPL). Includes an `Ownable` `mint` function.
-    *   `Exchange.sol`: The core contract managing deposits/withdrawals (ETH & Tokens), order placement (`placeOrder`) and cancellation (`cancelOrder`) which lock/refund funds respectively, unique order ID generation, and interaction with the Cartesi Compute SDK to trigger (`triggerOrderMatching`) and process (`processMatchResult`) off-chain order matching. Contains placeholders for Cartesi input data construction and result decoding/processing.
-*   **Deployment (`deploy/`, `hardhat.config.ts`):** Scripts and configuration for deploying contracts using Hardhat.
-*   **Cartesi Machine (`cartesi-machine/`):**
-    *   `offchain_logic.py`: Python script containing the order matching logic executed off-chain within the Cartesi Machine.
-    *   `build-machine.sh`: Script to build the Cartesi Machine template containing the `offchain_logic.py`. **(Requires Cartesi build tools)**
-*   **Backend (`backend/`):**
-    *   `server.py`: Python/Flask API server. Currently provides mock endpoints for viewing/submitting orders and simulating Cartesi trigger/result processing. Can be extended to interact with the blockchain.
-*   **Frontend (`frontend/`):**
-    *   `src/App.tsx`: TypeScript/React application providing the user interface. Connects to MetaMask, displays mock data, allows mock order placement via the backend API, and shows the mock order book.
+* **Docker (`docker-compose.yml`, `backend/Dockerfile`):** Defines the multi-container environment including a local blockchain, contract deployer, backend API, frontend server, and a Cartesi playground container for building/interacting with the Cartesi machine.
+* **Solidity Contracts (`contracts/`):**
+  * `StockToken.sol`: A standard ERC20 token contract (using OpenZeppelin) representing a tradable stock (e.g., AAPL). Includes an `Ownable` `mint` function.
+  * `Exchange.sol`: The core contract managing deposits/withdrawals (ETH & Tokens), order placement (`placeOrder`) and cancellation (`cancelOrder`) which lock/refund funds respectively, unique order ID generation, and interaction with the Cartesi Compute SDK to trigger (`triggerOrderMatching`) and process (`processMatchResult`) off-chain order matching. Contains placeholders for Cartesi input data construction and result decoding/processing.
+* **Deployment (`deploy/`, `hardhat.config.ts`):** Scripts and configuration for deploying contracts using Hardhat.
+* **Cartesi Machine (`cartesi-machine/`):**
+  * `offchain_logic.py`: Python script containing the order matching logic executed off-chain within the Cartesi Machine.
+  * `build-machine.sh`: Script to build the Cartesi Machine template containing the `offchain_logic.py`. **(Requires Cartesi build tools)**
+* **Backend (`backend/`):**
+  * `server.py`: Python/Flask API server. Currently provides mock endpoints for viewing/submitting orders and simulating Cartesi trigger/result processing. Can be extended to interact with the blockchain.
+* **Frontend (`frontend/`):**
+  * `src/App.tsx`: TypeScript/React application providing the user interface. Connects to MetaMask, displays mock data, allows mock order placement via the backend API, and shows the mock order book.
 
 ## High-Level Architecture
 
@@ -200,67 +200,71 @@ This section provides a detailed explanation of the system's core components, th
 ### Smart Contract Architecture
 
 #### StockToken.sol
+
 This contract implements an ERC20 token representing a stock, with the following key features:
 
-- **Standard ERC20 Functionality**: Implemented using OpenZeppelin's trusted libraries
-- **Minting Capability**: The contract owner can mint new tokens to specific addresses
-- **Access Control**: Ownable pattern restricts minting capabilities to the contract owner
+* **Standard ERC20 Functionality**: Implemented using OpenZeppelin's trusted libraries
+* **Minting Capability**: The contract owner can mint new tokens to specific addresses
+* **Access Control**: Ownable pattern restricts minting capabilities to the contract owner
 
 #### Exchange.sol
+
 This is the core contract that coordinates the entire exchange functionality:
 
 1. **Balance Management**
-   - `deposits` mapping: Tracks token balances for each user (tokenAddress → user → amount)
-   - `ethDeposits` mapping: Tracks ETH balances for each user (user → amount)
-   - `depositETH()`: Allows users to deposit ETH into the exchange
-   - `withdrawETH(amount)`: Allows users to withdraw ETH from the exchange
-   - `depositToken(tokenAddress, amount)`: Handles token deposits, requiring prior approval
-   - `withdrawToken(tokenAddress, amount)`: Processes token withdrawals
+   * `deposits` mapping: Tracks token balances for each user (tokenAddress → user → amount)
+   * `ethDeposits` mapping: Tracks ETH balances for each user (user → amount)
+   * `depositETH()`: Allows users to deposit ETH into the exchange
+   * `withdrawETH(amount)`: Allows users to withdraw ETH from the exchange
+   * `depositToken(tokenAddress, amount)`: Handles token deposits, requiring prior approval
+   * `withdrawToken(tokenAddress, amount)`: Processes token withdrawals
 
 2. **Order Management**
-   - `Order` struct: Stores all order details (id, user, token, amount, price, isBuyOrder, active)
-   - `orders` mapping: Maps order IDs to Order structs
-   - `_orderIds` counter: Generates unique sequential IDs for orders
-   - `placeOrder(tokenAddress, amount, price, isBuyOrder)`: 
-     - Creates a new order
-     - Locks the appropriate assets (ETH for buy orders, tokens for sell orders)
-     - Emits `OrderPlaced` event with order details
-   - `cancelOrder(orderId)`: 
-     - Cancels an active order
-     - Refunds locked assets to the user
-     - Emits `OrderCancelled` event
+   * `Order` struct: Stores all order details (id, user, token, amount, price, isBuyOrder, active)
+   * `orders` mapping: Maps order IDs to Order structs
+   * `_orderIds` counter: Generates unique sequential IDs for orders
+   * `placeOrder(tokenAddress, amount, price, isBuyOrder)`:
+     * Creates a new order
+     * Locks the appropriate assets (ETH for buy orders, tokens for sell orders)
+     * Emits `OrderPlaced` event with order details
+   * `cancelOrder(orderId)`:
+     * Cancels an active order
+     * Refunds locked assets to the user
+     * Emits `OrderCancelled` event
 
 3. **Cartesi Integration**
-   - `cartesiCompute`: Interface to interact with the Cartesi Compute SDK
-   - `cartesiTemplateHash`: Hash identifying the specific Cartesi Machine template to use
-   - `triggerOrderMatching(maxOrders, parties)`:
-     - Collects active buy and sell orders (up to `maxOrders` limit)
-     - Formats order data for the Cartesi Machine
-     - Creates a Cartesi drive with the input data
-     - Instantiates a Cartesi computation and returns its index
-     - Emits `ComputationRequested` event
-   - `processMatchResult(index)`:
-     - Retrieves and validates the computation result from Cartesi
-     - Decodes the matched trades from the result data
-     - Processes each matched trade:
-       - Validates order states and trade parameters
-       - Updates order states (amount remaining, active status)
-       - Transfers assets between buyers and sellers
-       - Emits `TradeExecuted` event for each processed trade
+   * `cartesiCompute`: Interface to interact with the Cartesi Compute SDK
+   * `cartesiTemplateHash`: Hash identifying the specific Cartesi Machine template to use
+   * `triggerOrderMatching(maxOrders, parties)`:
+     * Collects active buy and sell orders (up to `maxOrders` limit)
+     * Formats order data for the Cartesi Machine
+     * Creates a Cartesi drive with the input data
+     * Instantiates a Cartesi computation and returns its index
+     * Emits `ComputationRequested` event
+   * `processMatchResult(index)`:
+     * Retrieves and validates the computation result from Cartesi
+     * Decodes the matched trades from the result data
+     * Processes each matched trade:
+       * Validates order states and trade parameters
+       * Updates order states (amount remaining, active status)
+       * Transfers assets between buyers and sellers
+       * Emits `TradeExecuted` event for each processed trade
 
 4. **View Functions**
-   - `getOrder(orderId)`: Returns full details of a specific order
-   - `getUserTokenBalance(user, tokenAddress)`: Returns a user's token balance in the exchange
-   - `getUserEthBalance(user)`: Returns a user's ETH balance in the exchange
+   * `getOrder(orderId)`: Returns full details of a specific order
+   * `getUserTokenBalance(user, tokenAddress)`: Returns a user's token balance in the exchange
+   * `getUserEthBalance(user)`: Returns a user's ETH balance in the exchange
 
 ### Cartesi Off-chain Computation
 
 The off-chain computation in Cartesi allows for complex matching algorithms that would be prohibitively expensive to run directly on-chain. This provides scalability while maintaining the security guarantees of blockchain.
 
 #### offchain_logic.py
+
 This Python script implements the price-time priority matching algorithm:
 
 1. **Input Format**
+
    ```json
    {
      "buy_orders": [
@@ -275,19 +279,20 @@ This Python script implements the price-time priority matching algorithm:
    ```
 
 2. **Matching Algorithm**
-   - **Token Grouping**: Orders are first grouped by token address
-   - **Price-Time Priority**: 
-     - Buy orders are sorted by highest price first
-     - Sell orders are sorted by lowest price first
-     - Orders at the same price are prioritized by time (order ID as proxy)
-   - **Matching Process**:
-     - For each token, iterate through sorted buy and sell orders
-     - Match orders when buy price ≥ sell price
-     - Execute trades at the seller's asking price
-     - Handle partial fills by updating remaining amounts
-     - Continue until no more matches are possible
+   * **Token Grouping**: Orders are first grouped by token address
+   * **Price-Time Priority**:
+     * Buy orders are sorted by highest price first
+     * Sell orders are sorted by lowest price first
+     * Orders at the same price are prioritized by time (order ID as proxy)
+   * **Matching Process**:
+     * For each token, iterate through sorted buy and sell orders
+     * Match orders when buy price ≥ sell price
+     * Execute trades at the seller's asking price
+     * Handle partial fills by updating remaining amounts
+     * Continue until no more matches are possible
 
 3. **Output Format**
+
    ```json
    [
      {
@@ -302,138 +307,138 @@ This Python script implements the price-time priority matching algorithm:
    ```
 
 4. **Cartesi Machine Integration**
-   - The Cartesi Machine runs this Python script in a deterministic Linux environment
-   - Input data is read from a designated virtual drive
-   - Output is written to a standard output location
-   - The execution is verifiable via RISC-V proofs
+   * The Cartesi Machine runs this Python script in a deterministic Linux environment
+   * Input data is read from a designated virtual drive
+   * Output is written to a standard output location
+   * The execution is verifiable via RISC-V proofs
 
 ### Cartesi-Ethereum Interaction Flow
 
 The interaction between Ethereum and Cartesi involves several key steps:
 
 1. **Cartesi Machine Creation**
-   - A Cartesi Machine template is built with the matching algorithm
-   - The template hash is stored in the Exchange contract
-   - The `build-machine.sh` script handles machine creation and captures the template hash
+   * A Cartesi Machine template is built with the matching algorithm
+   * The template hash is stored in the Exchange contract
+   * The `build-machine.sh` script handles machine creation and captures the template hash
 
 2. **Computation Triggering**
-   - Admin calls `triggerOrderMatching()` on the Exchange contract
-   - Contract collects active orders and ABI-encodes them
-   - Data is passed to Cartesi via drives (input drive)
-   - Cartesi Compute SDK initializes the computation
+   * Admin calls `triggerOrderMatching()` on the Exchange contract
+   * Contract collects active orders and ABI-encodes them
+   * Data is passed to Cartesi via drives (input drive)
+   * Cartesi Compute SDK initializes the computation
 
 3. **Off-chain Computation**
-   - Validators run the Cartesi Machine with the provided input
-   - The matching algorithm processes orders and produces trade matches
-   - Results are written to the designated output location
-   - Validators reach consensus on the computation result
+   * Validators run the Cartesi Machine with the provided input
+   * The matching algorithm processes orders and produces trade matches
+   * Results are written to the designated output location
+   * Validators reach consensus on the computation result
 
 4. **Result Verification & Processing**
-   - Results are made available through the Cartesi Compute SDK
-   - Admin calls `processMatchResult()` on the Exchange contract
-   - Contract verifies and decodes the results
-   - Trades are executed on-chain, updating balances and order states
+   * Results are made available through the Cartesi Compute SDK
+   * Admin calls `processMatchResult()` on the Exchange contract
+   * Contract verifies and decodes the results
+   * Trades are executed on-chain, updating balances and order states
 
 5. **Security Guarantee**
-   - The Cartesi Machine execution is deterministic
-   - Results can be verified through cryptographic proofs
-   - Disputes can be resolved by rerunning specific computation steps
-   - This enables complex computation while maintaining blockchain security guarantees
+   * The Cartesi Machine execution is deterministic
+   * Results can be verified through cryptographic proofs
+   * Disputes can be resolved by rerunning specific computation steps
+   * This enables complex computation while maintaining blockchain security guarantees
 
 ### Backend API Architecture
 
 The Flask-based backend API serves multiple roles:
 
 1. **Blockchain Interface**
-   - Connects to Ethereum node via Web3.py
-   - Reads contract state (orders, balances) directly from the blockchain
-   - Triggers Cartesi computations as admin
-   - Processes computation results
+   * Connects to Ethereum node via Web3.py
+   * Reads contract state (orders, balances) directly from the blockchain
+   * Triggers Cartesi computations as admin
+   * Processes computation results
 
 2. **Mock Mode**
-   - Provides mock data when blockchain connection is unavailable
-   - Simulates order placement and matching for development
-   - Maintains a simple in-memory database of orders
+   * Provides mock data when blockchain connection is unavailable
+   * Simulates order placement and matching for development
+   * Maintains a simple in-memory database of orders
 
 3. **Security Features**
-   - Layered admin key management (Docker secrets, key file, env var)
-   - Permission validation for admin operations
-   - Input validation and error handling
+   * Layered admin key management (Docker secrets, key file, env var)
+   * Permission validation for admin operations
+   * Input validation and error handling
 
 4. **Endpoints**
-   - `/orders`: Get active orders, place new orders (mock)
-   - `/user/<address>/balances`: Get user balances
-   - `/trigger-matching`: Trigger Cartesi computation
-   - `/process-results/<index>`: Process Cartesi results
+   * `/orders`: Get active orders, place new orders (mock)
+   * `/user/<address>/balances`: Get user balances
+   * `/trigger-matching`: Trigger Cartesi computation
+   * `/process-results/<index>`: Process Cartesi results
 
 ### Frontend Architecture
 
 The React-based frontend provides the user interface:
 
 1. **Web3 Integration**
-   - Connects to MetaMask wallet
-   - Interacts directly with smart contracts via ethers.js
-   - Handles transaction signing and confirmation
+   * Connects to MetaMask wallet
+   * Interacts directly with smart contracts via ethers.js
+   * Handles transaction signing and confirmation
 
 2. **State Management**
-   - Tracks user balances, orders, and transaction history
-   - Provides form validation for user inputs
-   - Manages notifications and error messages
+   * Tracks user balances, orders, and transaction history
+   * Provides form validation for user inputs
+   * Manages notifications and error messages
 
 3. **UI Components**
-   - Deposit/withdraw interface
-   - Order placement form
-   - Order book display with filtering options
-   - Transaction history
+   * Deposit/withdraw interface
+   * Order placement form
+   * Order book display with filtering options
+   * Transaction history
 
 4. **Fallback Mechanism**
-   - Falls back to backend API for data when direct contract access fails
-   - Provides simulation options for development environment
+   * Falls back to backend API for data when direct contract access fails
+   * Provides simulation options for development environment
 
 ### Data Flow in Detail
 
 1. **Order Placement**
-   - User enters order details in the frontend
-   - Frontend prepares transaction via ethers.js
-   - User signs the transaction with MetaMask
-   - Exchange contract locks assets and creates the order
-   - Frontend updates to show the new order
+   * User enters order details in the frontend
+   * Frontend prepares transaction via ethers.js
+   * User signs the transaction with MetaMask
+   * Exchange contract locks assets and creates the order
+   * Frontend updates to show the new order
 
 2. **Order Matching Process**
-   - Admin initiates matching via backend or direct contract interaction
-   - Exchange contract collects active orders
-   - Cartesi computation processes the matching algorithm
-   - Validators reach consensus on the result
-   - Admin submits the result back to the Exchange contract
-   - Contract processes trades and updates state
-   - Events are emitted for each trade
+   * Admin initiates matching via backend or direct contract interaction
+   * Exchange contract collects active orders
+   * Cartesi computation processes the matching algorithm
+   * Validators reach consensus on the result
+   * Admin submits the result back to the Exchange contract
+   * Contract processes trades and updates state
+   * Events are emitted for each trade
 
 3. **Blockchain Event Handling**
-   - Frontend listens for relevant events (OrderPlaced, OrderCancelled, TradeExecuted)
-   - Updates UI based on event data
-   - Refreshes balances after state-changing events
+   * Frontend listens for relevant events (OrderPlaced, OrderCancelled, TradeExecuted)
+   * Updates UI based on event data
+   * Refreshes balances after state-changing events
 
 ### Security Considerations
 
 1. **Smart Contract Security**
-   - Reentrancy protection in withdrawal functions
-   - Balance checks before operations
-   - Proper authorization controls
+   * Reentrancy protection in withdrawal functions
+   * Balance checks before operations
+   * Proper authorization controls
 
 2. **Admin Key Management**
-   - Layered approach to key storage
-   - Docker secrets for production
-   - File permissions restrictions
+   * Layered approach to key storage
+   * Docker secrets for production
+   * File permissions restrictions
 
 3. **Input Validation**
-   - Frontend validation for user inputs
-   - Backend validation for API requests
-   - Contract-level validation for transactions
+   * Frontend validation for user inputs
+   * Backend validation for API requests
+   * Contract-level validation for transactions
 
 4. **Cartesi Verification**
-   - Cryptographic verification of computation results
-   - Consensus mechanism for result finalization
-   - Dispute resolution capability
+   * Cryptographic verification of computation results
+   * Consensus mechanism for result finalization
+   * Dispute resolution capability
 
 ## Setup and Usage (Docker)
 
@@ -441,100 +446,111 @@ This project uses Docker Compose to simplify setup and running all components.
 
 ### Prerequisites
 
-*   **Docker:** Install Docker Desktop or Docker Engine.
-*   **Docker Compose:** Usually included with Docker Desktop.
-*   **Node.js / npm:** Needed for initial dependency installation within containers.
-*   **Git:** To clone the repository.
-*   **MetaMask:** Browser extension wallet.
+* **Docker:** Install Docker Desktop or Docker Engine.
+* **Docker Compose:** Usually included with Docker Desktop.
+* **Node.js / npm:** Needed for initial dependency installation within containers.
+* **Git:** To clone the repository.
+* **MetaMask:** Browser extension wallet.
 
 ### Installation & Running
 
-1.  **Clone the Repository:**
+1. **Clone the Repository:**
+
     ```bash
     git clone <your-repo-url>
     cd cartesi-stock-exchange
     ```
 
-2.  **Configure Admin Private Key:**
+2. **Configure Admin Private Key:**
     The backend server uses a private key to perform administrative functions like triggering order matching and processing results. This key is securely managed using Docker secrets.
-    
+
     You can either:
-    - Use the default key in `secrets/admin_private_key.txt` (already set to the first Hardhat test account)
-    - Replace it with your own key:
+    * Use the default key in `secrets/admin_private_key.txt` (already set to the first Hardhat test account)
+    * Replace it with your own key:
+
       ```bash
       echo "YOUR_PRIVATE_KEY" > secrets/admin_private_key.txt
       ```
-    
+
     Make sure the key file has restricted permissions:
+
     ```bash
     chmod 600 secrets/admin_private_key.txt
     ```
 
-3.  **Build & Start Services:**
+3. **Build & Start Services:**
     This command builds the necessary Docker images (like the backend) and starts all services defined in `docker-compose.yml` in detached mode.
-    ```bash
-    docker-compose up --build -d
-    ```
-    *   This will start:
-        *   A Hardhat local blockchain node (`blockchain` service) on port 8545.
-        *   A service to deploy contracts (`deployer` service). Wait for its logs to show deployment completion.
-        *   The Flask backend API (`backend` service) on port 5001.
-        *   The React frontend (`frontend` service) on port 3000.
-        *   A Cartesi playground container (`cartesi` service) for potential machine building/interaction.
 
-4.  **Check Deployment:**
-    View the logs of the deployer service to see the contract deployment output and addresses:
     ```bash
-    docker-compose logs deployer
+    docker compose up --build -d
     ```
+
+    * This will start:
+        * A Hardhat local blockchain node (`blockchain` service) on port 8545.
+        * A service to deploy contracts (`deployer` service). Wait for its logs to show deployment completion.
+        * The Flask backend API (`backend` service) on port 5001.
+        * The React frontend (`frontend` service) on port 3000.
+        * A Cartesi playground container (`cartesi` service) for potential machine building/interaction.
+
+4. **Check Deployment:**
+    View the logs of the deployer service to see the contract deployment output and addresses:
+
+    ```bash
+    docker compose logs deployer
+    ```
+
     *Note: The deployer service currently uses a placeholder Cartesi template hash. You'll need to build the machine and update this.*
 
-5.  **Configure MetaMask:**
-    *   Add a new network to MetaMask:
-        *   Network Name: `Hardhat Local`
-        *   New RPC URL: `http://localhost:8545`
-        *   Chain ID: `31337`
-        *   Currency Symbol: `ETH`
-    *   Import a Hardhat default account using its private key (e.g., `0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80`) to have funds on the local network.
+5. **Configure MetaMask:**
+    * Add a new network to MetaMask:
+        * Network Name: `Hardhat Local`
+        * New RPC URL: `http://localhost:8545`
+        * Chain ID: `31337`
+        * Currency Symbol: `ETH`
+    * Import a Hardhat default account using its private key (e.g., `0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80`) to have funds on the local network.
 
-6.  **Access Frontend:**
+6. **Access Frontend:**
     Open your browser and navigate to `http://localhost:3000`.
 
-7.  **Interact:**
-    *   Connect your configured MetaMask wallet to the frontend.
-    *   Use the UI to place mock orders (via the backend API).
-    *   View the mock order book.
-    *   *(Optional)* Use tools like `curl` or Postman to interact with the backend API endpoints (`http://localhost:5001`) like `/orders`, `/trigger-matching`, `/process-results/<index>`.
-    *   *(Advanced)* Interact directly with the deployed contracts using Hardhat console or scripts.
+7. **Interact:**
+    * Connect your configured MetaMask wallet to the frontend.
+    * Use the UI to place mock orders (via the backend API).
+    * View the mock order book.
+    * *(Optional)* Use tools like `curl` or Postman to interact with the backend API endpoints (`http://localhost:5001`) like `/orders`, `/trigger-matching`, `/process-results/<index>`.
+    * *(Advanced)* Interact directly with the deployed contracts using Hardhat console or scripts.
 
 ### Building the Cartesi Machine (Inside Docker)
 
-1.  **Access the Cartesi Container:**
+1. **Access the Cartesi Container:**
+
     ```bash
     docker-compose exec cartesi bash
     ```
 
-2.  **Navigate and Build:**
+2. **Navigate and Build:**
     Inside the container's shell:
+
     ```bash
     cd /app/cartesi-machine
     # Ensure build-machine.sh has execute permissions if needed: chmod +x build-machine.sh
     ./build-machine.sh
     ```
-    *   This script *should* use tools within the `cartesi/playground` image to build the machine template based on `offchain_logic.py`.
-    *   **Note:** This script requires the necessary base images (ROM, Linux kernel) and Cartesi tools (`cartesi-machine`, `genext2fs`) to be available within the `cartesi/playground:0.5.0` image or mounted appropriately. You might need to adjust the `build-machine.sh` script or the Docker setup depending on the exact requirements.
 
-3.  **Update Template Hash:**
-    *   Copy the `templateHash` output by the build script.
-    *   Stop the services: `docker-compose down`
-    *   Edit `stock-token-exchange/deploy/01_deploy_contracts.ts` and replace the placeholder `CARTESI_TEMPLATE_HASH` with the actual hash.
-    *   Restart the services: `docker-compose up --build -d` (The deployer should now use the correct hash).
+    * This script *should* use tools within the `cartesi/playground` image to build the machine template based on `offchain_logic.py`.
+    * **Note:** This script requires the necessary base images (ROM, Linux kernel) and Cartesi tools (`cartesi-machine`, `genext2fs`) to be available within the `cartesi/playground:0.5.0` image or mounted appropriately. You might need to adjust the `build-machine.sh` script or the Docker setup depending on the exact requirements.
+
+3. **Update Template Hash:**
+    * Copy the `templateHash` output by the build script.
+    * Stop the services: `docker-compose down`
+    * Edit `stock-token-exchange/deploy/01_deploy_contracts.ts` and replace the placeholder `CARTESI_TEMPLATE_HASH` with the actual hash.
+    * Restart the services: `docker-compose up --build -d` (The deployer should now use the correct hash).
 
 ### Stopping Services
 
 ```bash
 docker-compose down
 ```
+
 This stops and removes the containers, networks, and volumes defined in the compose file.
 
 ## Backend API Documentation
@@ -552,9 +568,11 @@ http://localhost:5001
 #### Orders Management
 
 ##### GET `/orders`
+
 Retrieves all active orders in the exchange.
 
 **Response:**
+
 ```json
 [
   {
@@ -571,12 +589,14 @@ Retrieves all active orders in the exchange.
 ```
 
 ##### GET `/orders/{order_id}`
+
 Retrieves a specific order by ID.
 
 **Parameters:**
-- `order_id`: The unique identifier of the order
+* `order_id`: The unique identifier of the order
 
 **Response:**
+
 ```json
 {
   "id": 1,
@@ -590,9 +610,11 @@ Retrieves a specific order by ID.
 ```
 
 ##### POST `/orders`
+
 Simulates placing a new order. In a real scenario, orders would be placed directly via the smart contract from a user's wallet.
 
 **Request Body:**
+
 ```json
 {
   "user": "0x123...",
@@ -604,6 +626,7 @@ Simulates placing a new order. In a real scenario, orders would be placed direct
 ```
 
 **Response:**
+
 ```json
 {
   "status": "received (mock)",
@@ -622,12 +645,14 @@ Simulates placing a new order. In a real scenario, orders would be placed direct
 #### User Data
 
 ##### GET `/user/{address}/balances`
+
 Retrieves a user's ETH and token balances.
 
 **Parameters:**
-- `address`: The Ethereum address of the user
+* `address`: The Ethereum address of the user
 
 **Response:**
+
 ```json
 {
   "eth": 1000000000000000000,
@@ -641,17 +666,21 @@ Retrieves a user's ETH and token balances.
 #### Cartesi Operations
 
 ##### POST `/trigger-matching`
+
 Triggers the order matching computation via Cartesi. In production, this would be called by an admin.
 
 **Request Body:**
+
 ```json
 {
   "max_orders": 100
 }
 ```
+
 `max_orders` is optional and defaults to the value in `MAX_ORDERS_PER_BATCH` environment variable.
 
 **Response (real mode):**
+
 ```json
 {
   "status": "success",
@@ -662,6 +691,7 @@ Triggers the order matching computation via Cartesi. In production, this would b
 ```
 
 **Response (simulation mode):**
+
 ```json
 {
   "status": "simulated trigger"
@@ -669,12 +699,14 @@ Triggers the order matching computation via Cartesi. In production, this would b
 ```
 
 ##### POST `/process-results/{cartesi_index}`
+
 Processes the results of a Cartesi computation. In production, this would be called by an admin after the computation is finalized.
 
 **Parameters:**
-- `cartesi_index`: The index of the Cartesi computation to process
+* `cartesi_index`: The index of the Cartesi computation to process
 
 **Response (real mode):**
+
 ```json
 {
   "status": "success",
@@ -685,6 +717,7 @@ Processes the results of a Cartesi computation. In production, this would be cal
 ```
 
 **Response (simulation mode):**
+
 ```json
 {
   "status": "simulated result processing"
@@ -694,9 +727,11 @@ Processes the results of a Cartesi computation. In production, this would be cal
 #### Administration
 
 ##### POST `/admin/sync-blockchain`
+
 Synchronizes the backend's mock database with the current blockchain state.
 
 **Response:**
+
 ```json
 {
   "status": "success",
@@ -716,10 +751,10 @@ The API can operate in two modes:
 
 The API's behavior is controlled through these environment variables:
 
-- `EXCHANGE_CONTRACT_ADDRESS`: Address of the deployed Exchange contract
-- `NODE_URL`: URL of the Ethereum node (default: `http://localhost:8545`)
-- `MAX_ORDERS_PER_BATCH`: Maximum number of orders to include in a matching batch (default: `100`)
-- `ADMIN_PRIVATE_KEY`: Private key for the admin account (alternatively loaded from Docker secret)
+* `EXCHANGE_CONTRACT_ADDRESS`: Address of the deployed Exchange contract
+* `NODE_URL`: URL of the Ethereum node (default: `http://localhost:8545`)
+* `MAX_ORDERS_PER_BATCH`: Maximum number of orders to include in a matching batch (default: `100`)
+* `ADMIN_PRIVATE_KEY`: Private key for the admin account (alternatively loaded from Docker secret)
 
 Note: For security in production environments, the admin private key should be provided via Docker secrets rather than environment variables.
 
@@ -774,9 +809,9 @@ The Stock Token Exchange system uses various environment variables to configure 
 
 ### Security Considerations
 
-- **Admin Private Key**: For production environments, use the Docker secret or external key file methods rather than environment variables to store the admin private key.
-- **File Permissions**: Ensure that any file containing private keys has restricted permissions (e.g., `chmod 600 secrets/admin_private_key.txt`).
-- **Network Selection**: Be aware that the `CONTRACT_CHAIN_ID` must match the actual network where your contracts are deployed, otherwise the frontend will display a warning.
+* **Admin Private Key**: For production environments, use the Docker secret or external key file methods rather than environment variables to store the admin private key.
+* **File Permissions**: Ensure that any file containing private keys has restricted permissions (e.g., `chmod 600 secrets/admin_private_key.txt`).
+* **Network Selection**: Be aware that the `CONTRACT_CHAIN_ID` must match the actual network where your contracts are deployed, otherwise the frontend will display a warning.
 
 ### Configuration Update Process
 
@@ -818,6 +853,7 @@ docker-compose logs deployer
 ```
 
 Expected output:
+
 ```
 deployer_1  | Deploying StockToken...
 deployer_1  | StockToken deployed at: 0x5FbDB2315678afecb367f032d93F642f64180aa3
@@ -855,15 +891,15 @@ npx ts-node scripts/export-deployments.ts
 ### 4. Configure MetaMask
 
 1. Add the local Hardhat network to MetaMask:
-   - Network Name: `Hardhat Local`
-   - RPC URL: `http://localhost:8545`
-   - Chain ID: `31337`
-   - Currency Symbol: `ETH`
+   * Network Name: `Hardhat Local`
+   * RPC URL: `http://localhost:8545`
+   * Chain ID: `31337`
+   * Currency Symbol: `ETH`
 
 2. Import test accounts:
-   - **Admin/Owner Account**: `0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80`
-   - **Alice (Buyer)**: `0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d`
-   - **Bob (Seller)**: `0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a`
+   * **Admin/Owner Account**: `0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80`
+   * **Alice (Buyer)**: `0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d`
+   * **Bob (Seller)**: `0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a`
 
 ### 5. Mint and Distribute Tokens
 
@@ -993,6 +1029,7 @@ curl http://localhost:5001/orders
 ```
 
 Expected output:
+
 ```json
 [
   {
@@ -1017,6 +1054,7 @@ Expected output:
 ```
 
 Via console:
+
 ```javascript
 const order1 = await exchange.getOrder(1);
 console.log("Order 1:", { 
@@ -1046,16 +1084,18 @@ curl -X POST http://localhost:5001/trigger-matching
 ```
 
 Expected output:
+
 ```json
 {
   "status": "success",
-  "txHash": "0x123abc...",
-  "blockNumber": 12345,
-  "cartesiIndex": 0
+  "txHash": "0x123...",
+  "blockNumber": 123456,
+  "cartesiIndex": 5
 }
 ```
 
 Via console:
+
 ```javascript
 // Trigger order matching with the admin account
 const admin = owner; // First account is admin/owner
@@ -1080,6 +1120,7 @@ curl -X POST http://localhost:5001/process-results/0
 ```
 
 Expected output:
+
 ```json
 {
   "status": "success",
@@ -1090,6 +1131,7 @@ Expected output:
 ```
 
 Via console:
+
 ```javascript
 // Process the matching results
 const processTx = await exchange.connect(admin).processMatchResult(cartesiIndex);
@@ -1117,6 +1159,7 @@ curl http://localhost:5001/user/0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC/balan
 ```
 
 Via console:
+
 ```javascript
 // Check order status (should be inactive)
 const order1After = await exchange.getOrder(1);
@@ -1137,26 +1180,29 @@ console.log("Tokens in exchange:", ethers.utils.formatEther(await exchange.getUs
 ```
 
 Expected results:
-- Both orders should be marked as inactive (filled)
-- Alice should have 10 STOCK tokens in her exchange balance
-- Bob should have 1 ETH (10 tokens × 0.1 ETH) in his exchange balance
-- The appropriate trade events should be emitted on the blockchain
+* Both orders should be marked as inactive (filled)
+* Alice should have 10 STOCK tokens in her exchange balance
+* Bob should have 1 ETH (10 tokens × 0.1 ETH) in his exchange balance
+* The appropriate trade events should be emitted on the blockchain
 
 ### 12. Withdraw Funds
 
 Finally, Alice and Bob can withdraw their assets:
 
 Using the frontend with Alice's account:
+
 1. Enter `10` in the withdraw amount field
 2. Click "Withdraw STOCK"
 3. Confirm the transaction in MetaMask
 
 Using the frontend with Bob's account:
+
 1. Enter `1` in the withdraw amount field
 2. Click "Withdraw ETH"
 3. Confirm the transaction in MetaMask
 
 Via console:
+
 ```javascript
 // Alice withdraws her tokens
 await exchange.connect(alice).withdrawToken(stockToken.address, ethers.utils.parseEther("10"));
@@ -1170,6 +1216,7 @@ console.log("Bob's wallet ETH balance:", ethers.utils.formatEther(await ethers.p
 ### Summary
 
 This walkthrough demonstrates the complete flow:
+
 1. Setup and deployment
 2. Token minting and distribution
 3. Fund deposits to the exchange
@@ -1180,32 +1227,184 @@ This walkthrough demonstrates the complete flow:
 8. Fund withdrawals
 
 The key points illustrated:
-- The separation of concerns between on-chain and off-chain operations
-- How the Cartesi machine enables complex matching algorithms off-chain
-- The verification and processing of results back on-chain
-- The complete lifecycle of orders and trades in the system
+* The separation of concerns between on-chain and off-chain operations
+* How the Cartesi machine enables complex matching algorithms off-chain
+* The verification and processing of results back on-chain
+* The complete lifecycle of orders and trades in the system
 
 ## Missing Implementation / Next Steps
 
-*   **Cartesi Machine Build:** The `build-machine.sh` script needs verification and potentially base images (ROM, kernel) added or mounted. The `cartesi/playground` image capabilities need confirmation.
-*   **Cartesi Template Hash:** The placeholder hash in `deploy/01_deploy_contracts.ts` must be replaced with the actual hash after building the machine.
-*   **`Exchange.sol` - `processMatchResult`:** The logic to **decode** the `resultData` from the Cartesi Machine (expected JSON format from `offchain_logic.py`) and **update on-chain balances/order statuses** needs to be implemented (currently placeholder comments).
-*   **`Exchange.sol` - Cartesi Input:** The `triggerOrderMatching` function needs refinement on how `_inputData` is constructed (e.g., ABI-encoding active order data) and potentially passed via Cartesi drives or off-chain storage if it's large.
-*   **Backend (`server.py`):**
-    *   Implement actual Web3 interactions (commented out) to call `triggerOrderMatching` and `processMatchResult` using an admin key.
-    *   Load contract ABI properly.
-    *   Replace mock DB with actual blockchain state queries (reading deposits, order states from the contract using functions like `getOrder`, `getUserTokenBalance`, `getUserEthBalance`).
-    *   ✅ Securely manage the `ADMIN_PRIVATE_KEY` (implemented via Docker secrets with layered security approach).
-*   **Frontend (`App.tsx`):**
-    *   Implement actual contract interactions using `ethers.js` (or similar) for:
-        *   ✅ Depositing/Withdrawing ETH and Tokens (implemented with `ethers.js` integration).
-        *   ✅ Placing orders directly via `Exchange.sol::placeOrder`.
-        *   ✅ Cancelling orders via `Exchange.sol::cancelOrder`.
-        *   ✅ Fetching real balances and order data from the contract.
-    *   Replace mock addresses/ABIs with deployed ones (potentially loaded from artifacts).
-    *   Improve UI/UX and error handling.
-*   **Configuration:** ✅ Centralized configuration through `.env` file. Project now uses dotenv for all environment variables, with deployer service automatically updating contract addresses after deployment using the `update-env.sh` script. Docker Compose loads these variables throughout the entire application stack.
-*   **Testing:** Add unit tests (Solidity, Python, TypeScript) and integration tests.
-*   **Security:** Perform security audits, add access controls, input validation, and consider potential attack vectors (reentrancy, etc.).
-*   **Error Handling:** Implement robust error handling across all components.
-*   **`Exchange.sol` Deposit/Withdraw:** ✅ Implemented `depositETH`, `withdrawETH`, `depositToken`, `withdrawToken` functions with proper event emission and security checks.
+* **Cartesi Machine Build:** The `build-machine.sh` script needs verification and potentially base images (ROM, kernel) added or mounted. The `cartesi/playground` image capabilities need confirmation.
+* **Cartesi Template Hash:** The placeholder hash in `deploy/01_deploy_contracts.ts` must be replaced with the actual hash after building the machine.
+* **`Exchange.sol` - `processMatchResult`:** The logic to **decode** the `resultData` from the Cartesi Machine (expected JSON format from `offchain_logic.py`) and **update on-chain balances/order statuses** needs to be implemented (currently placeholder comments).
+* **`Exchange.sol` - Cartesi Input:** The `triggerOrderMatching` function needs refinement on how `_inputData` is constructed (e.g., ABI-encoding active order data) and potentially passed via Cartesi drives or off-chain storage if it's large.
+* **Backend (`server.py`):**
+  * Implement actual Web3 interactions (commented out) to call `triggerOrderMatching` and `processMatchResult` using an admin key.
+  * Load contract ABI properly.
+  * Replace mock DB with actual blockchain state queries (reading deposits, order states from the contract using functions like `getOrder`, `getUserTokenBalance`, `getUserEthBalance`).
+  * ✅ Securely manage the `ADMIN_PRIVATE_KEY` (implemented via Docker secrets with layered security approach).
+* **Frontend (`App.tsx`):**
+  * Implement actual contract interactions using `ethers.js` (or similar) for:
+    * ✅ Depositing/Withdrawing ETH and Tokens (implemented with `ethers.js` integration).
+    * ✅ Placing orders directly via `Exchange.sol::placeOrder`.
+    * ✅ Cancelling orders via `Exchange.sol::cancelOrder`.
+    * ✅ Fetching real balances and order data from the contract.
+  * Replace mock addresses/ABIs with deployed ones (potentially loaded from artifacts).
+  * Improve UI/UX and error handling.
+* **Configuration:** ✅ Centralized configuration through `.env` file. Project now uses dotenv for all environment variables, with deployer service automatically updating contract addresses after deployment using the `update-env.sh` script. Docker Compose loads these variables throughout the entire application stack.
+* **Testing:** Add unit tests (Solidity, Python, TypeScript) and integration tests.
+* **Security:** Perform security audits, add access controls, input validation, and consider potential attack vectors (reentrancy, etc.).
+* **Error Handling:** Implement robust error handling across all components.
+* **`Exchange.sol` Deposit/Withdraw:** ✅ Implemented `depositETH`, `withdrawETH`, `depositToken`, `withdrawToken` functions with proper event emission and security checks.
+
+## for developers
+
+##### Running the Application (Docker Compose)
+
+1. **Prerequisites:**
+    * Docker & Docker Compose installed.
+    * Node.js & npm (for local contract interaction/testing if needed).
+    * Python & pip (for backend development if needed).
+
+2. **Environment Setup:**
+    * Copy the example environment file: `cp .env.example .env`
+    * Create the secrets directory: `mkdir secrets`
+    * Place your admin private key (used for deployment and potentially admin actions) in `secrets/admin_private_key.txt`. **Important:** Ensure this file has secure permissions:
+
+        ```bash
+        chmod 400 secrets/admin_private_key.txt
+        ```
+
+    * *(Optional)* Review and adjust settings in the root `.env` file if necessary (e.g., `MAX_ORDERS_PER_BATCH`).
+
+3. **Build and Run:**
+
+    ```bash
+    docker-compose up --build -d
+    ```
+
+    * `--build`: Forces Docker to rebuild images if Dockerfiles or build contexts have changed.
+    * `-d`: Runs containers in detached mode (in the background).
+
+4. **Accessing Services:**
+    * **Frontend:** [http://localhost:3000](http://localhost:3000)
+    * **Backend API:** [http://localhost:5001](http://localhost:5001) (e.g., `http://localhost:5001/api/orders`)
+    * **Hardhat Node RPC:** `http://localhost:8545`
+
+5. **Stopping the Application:**
+
+    ```bash
+    docker-compose down
+    ```
+
+    * Use `docker-compose down -v` to also remove named volumes (like potential database volumes if added later).
+
+**Troubleshooting:**
+
+* **`sed: cannot rename ... Device or resource busy` during deployment:** This warning may appear when running Docker Compose on Windows or macOS due to volume mount interactions. If the `deployer` service completes successfully (exits with code 0) and the contract addresses are updated in the root `.env` file and `frontend/src/deployments/index.ts`, this warning can usually be ignored.
+* **Permissions Error on `admin_private_key.txt`:** Ensure you run `chmod 400 secrets/admin_private_key.txt` on your host machine *before* starting the containers.
+* **Frontend/Backend Connection Issues:** Verify `REACT_APP_BACKEND_URL` in `docker-compose.yml` points to `http://backend:5001`. Check backend logs for errors.
+
+## Development
+
+### Backend Development
+
+For backend development, you can install the necessary Python packages in a virtual environment:
+
+```bash
+# Create and activate a virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows use `venv\Scripts\activate`
+
+# Install requirements
+pip install -r backend/requirements.txt
+```
+
+To run the backend server:
+
+```bash
+export FLASK_APP=backend/server.py
+export FLASK_ENV=development
+flask run --host=0.0.0.0 --port=5001
+```
+
+### Frontend Development
+
+For frontend development, you can use npm or yarn to manage packages and run the development server:
+
+```bash
+# Install dependencies
+npm install
+
+# Start the development server
+npm start
+```
+
+The frontend should automatically reload if you make edits to the source files.
+
+### Smart Contract Development
+
+For smart contract development, you can use Hardhat's built-in commands:
+
+```bash
+# Compile contracts
+npx hardhat compile
+
+# Run tests
+npx hardhat test
+
+# Deploy contracts to local network
+npx hardhat run deploy/01_deploy_contracts.ts --network localhost
+```
+
+### Common Tasks
+
+#### Updating Contract ABIs
+
+After making changes to Solidity contracts, you need to recompile and update the ABI files:
+
+```bash
+npx hardhat compile
+```
+
+This will update the ABI files in the `artifacts` directory. Make sure the frontend and backend are using the latest ABI files.
+
+#### Resetting Docker Environment
+
+If you encounter issues with the Docker environment, you can reset it by stopping and removing all containers, networks, and volumes:
+
+```bash
+docker-compose down -v
+```
+
+Then, rebuild and start the services:
+
+```bash
+docker-compose up --build -d
+```
+
+#### Viewing Logs
+
+To view the logs of a specific service (e.g., backend), use:
+
+```bash
+docker-compose logs -f backend
+```
+
+This will tail the logs and show real-time output. Use `CTRL+C` to stop tailing the logs.
+
+#### Accessing Container Shell
+
+To access the shell of a running container (e.g., backend), use:
+
+```bash
+docker-compose exec backend bash
+```
+
+This allows you to run commands inside the container. Use `exit` to leave the container shell.
+
+### Notes
+
+* Ensure that your Docker Desktop or Docker Engine is running before executing Docker commands.
+* For Windows users, consider using WSL 2 (Windows Subsystem for Linux) for better compatibility with Docker and Linux-based tools.
+* Regularly pull the latest changes from the repository to stay updated with the latest features and fixes.

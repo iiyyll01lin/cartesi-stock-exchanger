@@ -6,6 +6,16 @@ WORKDIR /app/backend
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Install additional tools for debugging
+RUN apt-get update && apt-get install -y curl jq
+
+# Copy the backend code
+COPY . .
+
+# Copy the entrypoint script from the local directory
+COPY entrypoint.sh /app/backend/entrypoint.sh
+RUN chmod +x /app/backend/entrypoint.sh
+
 # Set Flask environment
 ENV FLASK_APP=server.py
 ENV FLASK_DEBUG=1
@@ -15,4 +25,4 @@ ENV HOST=0.0.0.0
 EXPOSE 5001
 
 # Start Flask server
-CMD ["flask", "run", "--host=0.0.0.0", "--port=5001"]
+ENTRYPOINT ["/app/backend/entrypoint.sh"]

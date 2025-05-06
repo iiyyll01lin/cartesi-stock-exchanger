@@ -22,7 +22,9 @@
     "deploy": "hardhat deploy --network localhost",
     "console": "hardhat console --network localhost",
     "test": "hardhat test",
-    "build-machine": "cd cartesi-machine && ./build-machine.sh"
+    "build-machine": "cd cartesi-machine && ./build-machine.sh",
+    "export:frontend": "ts-node scripts/export-deployments.ts",
+    "generate:deployments": "node frontend/scripts/generate-deployments.js"
   },
   "keywords": [
     "cartesi",

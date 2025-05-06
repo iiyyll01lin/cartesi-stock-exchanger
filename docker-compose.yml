@@ -1,15 +1,13 @@
-version: '3.8'
-
 services:
   # Local Blockchain Node
   blockchain:
-    image: node:16
+    image: node:18
     working_dir: /app
     volumes:
       - ./stock-token-exchange:/app
-    # Install dependencies and start Hardhat node
+    # Install dependencies, clean cache, and start Hardhat node
     command: >
-      bash -c "npm install && npx hardhat node"
+      bash -c "npm install && npx hardhat clean && exec npx hardhat node"
     ports:
       - "8545:8545"
     networks:
@@ -17,88 +15,126 @@ services:
 
   # Smart Contract Deployment Service
   deployer:
-    image: node:16
-    working_dir: /app
+    image: node:18
+    working_dir: /app/stock-token-exchange # Set working dir to the project root
     volumes:
-      - ./stock-token-exchange:/app
-      - ./.env:/app/.env
-    # Install dependencies, wait for blockchain, deploy contracts and update .env
+      - ./stock-token-exchange:/app/stock-token-exchange # Mount the project dir
+      - ./.env:/app/.env # Mount root .env if needed by hardhat config
+    # Install dependencies, clean cache, wait for blockchain, deploy contracts and update .env
     command: >
-      bash -c "npm install && \
+      bash -c "apt-get update && apt-get install -y jq curl && \
+               npm install && \
+               npx hardhat clean && \
                echo 'Waiting for blockchain node to start...' && \
-               sleep 15 && \
+               while ! curl -sf -X POST --data '{\\"jsonrpc\\":\\"2.0\\",\\"method\\":\\"eth_blockNumber\\",\\"params\\":[],\\"id\\":1}' -H 'Content-Type: application/json' http://blockchain:8545 > /dev/null; do \
+                 echo 'Waiting for blockchain...'; \
+                 sleep 1; \
+               done && \
+               echo 'Blockchain started.' && \
                npx hardhat deploy --network localhost && \
-               echo 'Deployment finished. Updating environment variables...' && \
-               ./update-env.sh --exchange-address $(cat deployments/localhost/Exchange.json | jq -r '.address') \
-                              --token-address $(cat deployments/localhost/StockToken.json | jq -r '.address') && \
-               echo 'Environment updated. Keeping container alive...' && \
-               tail -f /dev/null"
+               echo 'Deployment finished. Exporting ABIs and updating .env...' && \
+               # Paths are now relative to /app/stock-token-exchange
+               EXCHANGE_ADDR=$(jq -r .address ./deployments/localhost/Exchange.json) && \
+               TOKEN_ADDR=$(jq -r .address ./deployments/localhost/StockToken.json) && \
+               # Execute update-env.sh (relative path), target files relative to /app/stock-token-exchange
+               ./update-env.sh --exchange-address $$EXCHANGE_ADDR --token-address $$TOKEN_ADDR --frontend-deployments ./frontend/src/deployments/index.ts && \
+               # Also create a direct copy of the deployment info for the frontend
+               mkdir -p /app/stock-token-exchange/frontend/src/deployments && \
+               echo '// This file is auto-generated\\nexport const EXCHANGE_ADDRESS = \"'$$EXCHANGE_ADDR'\";\\nexport const STOCK_TOKEN_ADDRESS = \"'$$TOKEN_ADDR'\";\\nexport const EXCHANGE_ABI = [];\\nexport const STOCK_TOKEN_ABI = [];\\nexport const CONTRACT_CHAIN_ID = 31337;\\nexport default {exchange:{address:EXCHANGE_ADDRESS,abi:EXCHANGE_ABI},stockToken:{address:STOCK_TOKEN_ADDRESS,abi:STOCK_TOKEN_ABI},chainId:CONTRACT_CHAIN_ID};' > /app/stock-token-exchange/frontend/src/deployments/index.ts"
     depends_on:
-      - blockchain
+      blockchain:
+        condition: service_started
     networks:
       - stock-exchange-network
-    # Environment variable to enable test token minting during deployment
     environment:
-      - MINT_TEST_TOKENS=${MINT_TEST_TOKENS:-true}
-      - TEST_TOKEN_AMOUNT=${TEST_TOKEN_AMOUNT:-1000}
-      - CHAIN_ID=${CHAIN_ID:-31337}
+      - HARDHAT_NETWORK=localhost # Ensure deploy script uses localhost
 
   # Backend Server (Flask)
   backend:
     build:
-      context: ./stock-token-exchange/backend
+      context: ./stock-token-exchange/backend # Corrected context path
       dockerfile: Dockerfile
     volumes:
-      - ./stock-token-exchange:/app
-      - ./.env:/app/.env
+      - ./stock-token-exchange/backend:/app/backend # Mount backend source
+      - ./stock-token-exchange/deployments:/app/deployments # Mount deployments for ABIs
+      - ./.env:/app/.env # Mount the root .env file directly
     working_dir: /app/backend
     ports:
-      - "${BACKEND_PORT:-5001}:${BACKEND_PORT:-5001}"
-    environment:
-      # Flask specific environment variables
-      - FLASK_APP=${FLASK_APP:-server.py}
-      - FLASK_DEBUG=${FLASK_DEBUG:-1}
-      # Blockchain connection details
-      - EXCHANGE_CONTRACT_ADDRESS=${EXCHANGE_CONTRACT_ADDRESS}
-      - STOCK_TOKEN_ADDRESS=${STOCK_TOKEN_ADDRESS}
-      - NODE_URL=${NODE_URL:-http://blockchain:8545}
-      - CHAIN_ID=${CHAIN_ID:-31337}
-      # Optional environment variables
-      - MAX_ORDERS_PER_BATCH=${MAX_ORDERS_PER_BATCH:-100}
-      - BACKEND_PORT=${BACKEND_PORT:-5001}
-    secrets:
-      - admin_private_key
+      - "5001:5001"
     depends_on:
-      - deployer
+      blockchain: # Ensure blockchain is ready before backend starts
+        condition: service_started # Or service_healthy if healthcheck is added
+      deployer:   # Ensure contracts are deployed and .env updated
+        condition: service_completed_successfully # Wait for deployer script to finish
     networks:
       - stock-exchange-network
+    secrets: # Define secret usage for backend
+      - admin_private_key
+    environment: # Pass necessary env vars from the root .env AND override NODE_URL
+      - FLASK_APP=${FLASK_APP:-server.py} # Use from root .env or default
+      - FLASK_DEBUG=${FLASK_DEBUG:-1} # Use from root .env or default
+      - NODE_URL=http://blockchain:8545 # Override NODE_URL for container network
+      - EXCHANGE_CONTRACT_ADDRESS=${EXCHANGE_CONTRACT_ADDRESS} # From root .env (updated by deployer)
+      - STOCK_TOKEN_ADDRESS=${STOCK_TOKEN_ADDRESS} # From root .env (updated by deployer)
+      - ADMIN_PRIVATE_KEY_PATH=/run/secrets/admin_private_key # Path to secret file
+      - MAX_ORDERS_PER_BATCH=${MAX_ORDERS_PER_BATCH:-100} # Use from root .env or default
+      - DEPLOYMENT_PATH=/app/deployments # Tell backend where to find ABIs
 
   # Frontend Server (React)
   frontend:
-    image: node:16
-    working_dir: /app
-    volumes:
-      - ./stock-token-exchange:/app
-      - ./.env:/app/.env
-    # Change to frontend directory, install dependencies, start dev server
-    command: >
-      bash -c "cd frontend && \
-               npm install && \
-               export REACT_APP_CHAIN_ID=${CHAIN_ID:-31337} && \
-               export REACT_APP_EXCHANGE_ADDRESS=${EXCHANGE_CONTRACT_ADDRESS} && \
-               export REACT_APP_STOCK_TOKEN_ADDRESS=${STOCK_TOKEN_ADDRESS} && \
-               export REACT_APP_BACKEND_URL=${REACT_APP_BACKEND_URL:-http://localhost:5001} && \
-               npm start"
+    build:
+      context: ./stock-token-exchange/frontend
+      dockerfile: Dockerfile
     ports:
       - "3000:3000"
+    volumes:
+      - ./stock-token-exchange/frontend:/app # Mount the frontend source code
+      - /app/node_modules # Avoid overwriting node_modules from host
+      # Mount the deployments directory from the root to be accessible by the export script
+      - ./stock-token-exchange/deployments:/app/deployments_src
+      # Mount the frontend scripts directory
+      - ./stock-token-exchange/frontend/scripts:/app/scripts
+      # Mount tsconfig from parent for ts-node
+      - ./stock-token-exchange/tsconfig.json:/app/tsconfig.json
+    environment:
+      - NODE_ENV=development
+      - CHOKIDAR_USEPOLLING=true
+      - WATCHPACK_POLLING=true  # Add this line
+      - FAST_REFRESH=false      # Add this line
+      - REACT_FAST_REFRESH=false # Add this line
     depends_on:
       - backend
-    networks:
-      - stock-exchange-network
-    environment:
-      # Environment variables for React app
-      - REACT_APP_BACKEND_URL=${REACT_APP_BACKEND_URL:-http://localhost:5001}
-      - WDS_SOCKET_PORT=${WDS_SOCKET_PORT:-3000}
+      - deployer # Ensure deployments are potentially ready
+    # Run the export script first, then start react
+    # Use sh -c to run multiple commands
+    # Use relative paths assuming working_dir is /app
+    command: >
+      sh -c "
+        echo '--- Running deployment export ---' && 
+        # Need to install parent dependencies for ts-node if not already present
+        # This assumes the frontend Dockerfile doesn't install them
+        # Consider adding ts-node and typescript to frontend/package.json devDependencies instead
+        # Or build a shared base image
+        # Quick fix: install parent deps if node_modules isn't there
+        if [ ! -d "/app/node_modules" ]; then npm install --prefix /app; fi && 
+        # Run the export script using ts-node from the parent context
+        # Adjust path relative to /app if needed
+        # Assuming export-deployments.ts expects to be run from stock-token-exchange level
+        # We need to adjust paths inside the script or run it differently.
+        # Let's try running it directly, assuming paths inside are relative to script location
+        # Or better: modify export script to accept output path
+        # For now, assume it writes to ../frontend/src/deployments
+        # We need ts-node installed globally or locally
+        # Let's install it temporarily if not found
+        if ! command -v ts-node &> /dev/null; then npm install -g ts-node typescript; fi && 
+        echo 'Running ts-node scripts/export-deployments.ts...' && 
+        # Execute ts-node pointing to the script mounted at /app/scripts
+        # The script needs to correctly reference /app/deployments_src and output to /app/src/deployments
+        ts-node /app/scripts/export-deployments.ts && 
+        echo '--- Starting React app ---' && 
+        npm start
+      "
+    working_dir: /app # Set working directory inside container
 
   # Cartesi Environment (for building/running the machine)
   cartesi:

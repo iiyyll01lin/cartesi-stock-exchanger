@@ -6,21 +6,22 @@ import * as dotenv from "dotenv";
 // Load environment variables from .env file
 dotenv.config();
 
-// Export contract deployments to frontend
-import "./scripts/export-deployments";
-
 // Default private key (DO NOT use in production)
 const DEFAULT_PRIVATE_KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"; // Hardhat default #0
 
 const config: HardhatUserConfig = {
   solidity: {
-    version: "0.8.20",
-    settings: {
-      optimizer: {
-        enabled: true,
-        runs: 200
+    compilers: [
+      {
+        version: "0.8.20", // For your main project contracts
+        settings: {
+          optimizer: {
+            enabled: true,
+            runs: 200,
+          },
+        },
       }
-    }
+    ],
   },
   
   networks: {
@@ -31,7 +32,7 @@ const config: HardhatUserConfig = {
     
     // Localhost with Cartesi Compute installed
     localhost: {
-      url: "http://localhost:8545",
+      url: "http://blockchain:8545",  // Use Docker service name instead of localhost
       accounts: [process.env.PRIVATE_KEY || DEFAULT_PRIVATE_KEY],
       timeout: 60000
     },
@@ -60,7 +61,6 @@ const config: HardhatUserConfig = {
     ],
     deployments: {
       localhost: ["node_modules/@cartesi/compute-sdk/export/deployments/localhost"],
-      // Add other networks as needed
     }
   },
   

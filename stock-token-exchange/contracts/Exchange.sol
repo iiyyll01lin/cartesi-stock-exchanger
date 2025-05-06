@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import "@cartesi/compute-sdk/contracts/CartesiComputeInterface.sol";
+import "./interfaces/CartesiComputeInterface.sol";
 import "./StockToken.sol";
 import "@openzeppelin/contracts/utils/Counters.sol"; // Import Counters
 
@@ -42,14 +42,23 @@ contract Exchange {
         bool isBuyOrder;
         bool active;
     }
+    
+    // Define the MatchedTrade struct for order matches from the Cartesi computation
+    struct MatchedTrade {
+        uint256 buyOrderId;
+        uint256 sellOrderId;
+        address token;
+        uint256 amount;
+        uint256 price;
+    }
 
     // Cartesi configuration variables
     uint256 constant cartesiFinalTime = 1e11;
-    uint256 constant cartesiOutputPosition = 0xb000000000000000;
-    uint256 constant cartesiOutputLog2Size = 10; // 2^10 = 1KB output size
+    uint64 constant cartesiOutputPosition = 0xb000000000000000;
+    uint8 constant cartesiOutputLog2Size = 10; // 2^10 = 1KB output size
     uint256 constant cartesiRoundDuration = 51;
-    uint256 constant cartesiInputDrivePosition = 0xa000000000000000;
-    uint256 constant cartesiInputDriveLog2Size = 20; // 2^20 ~= 1MB input size
+    uint64 constant cartesiInputDrivePosition = 0xa000000000000000;
+    uint8 constant cartesiInputDriveLog2Size = 20; // 2^20 ~= 1MB input size
 
     event ComputationRequested(uint256 indexed cartesiIndex, bytes inputData);
 
@@ -210,9 +219,8 @@ contract Exchange {
      * @notice Triggers the off-chain order matching computation.
      * @dev Collects active orders and sends them to the Cartesi Machine.
      * @param _maxOrders Maximum number of orders to include (to limit gas)
-     * @param _parties Participants involved (e.g., exchange admin/operator).
      */
-    function triggerOrderMatching(uint256 _maxOrders, address[] memory _parties) external onlyAdmin returns (uint256) {
+    function triggerOrderMatching(uint256 _maxOrders, address[] memory /* _parties */) external onlyAdmin returns (uint256) {
         // 1. Collect active orders (up to _maxOrders)
         OrderInfo[] memory activeBuyOrders = collectActiveOrders(true, _maxOrders);
         OrderInfo[] memory activeSellOrders = collectActiveOrders(false, _maxOrders);
@@ -247,9 +255,11 @@ contract Exchange {
             position: cartesiInputDrivePosition,
             driveLog2Size: cartesiInputDriveLog2Size,
             directValue: inputData // Pass data directly for moderate-sized inputs
-            // For large data: use an offchain reference + IPFS/HTTP URL
-            // directValue: abi.encodePacked(keccak256(inputData)) // Hash reference
         });
+        
+        // Prepare parties array (just the admin in this simple version)
+        address[] memory parties = new address[](1);
+        parties[0] = admin;
         
         // 5. Instantiate the Cartesi computation with the provided parameters
         uint256 cartesiIndex = cartesiCompute.instantiate(
@@ -258,9 +268,8 @@ contract Exchange {
             cartesiOutputPosition,
             cartesiOutputLog2Size,
             cartesiRoundDuration,
-            _parties,
-            drives,
-            false // Don't use metadata drive (change if needed)
+            parties,
+            drives
         );
         
         // Log the computation request and input data (for auditability)
@@ -323,15 +332,6 @@ contract Exchange {
         require(hasResult, "Computation has no result yet");
         require(finalized, "Computation result not finalized");
         require(resultData.length > 0, "Result data is empty");
-
-        // Define the MatchedTrade struct to match the JSON format from offchain_logic.py
-        struct MatchedTrade {
-            uint256 buyOrderId;
-            uint256 sellOrderId;
-            address token;
-            uint256 amount;
-            uint256 price;
-        }
 
         // Decode the JSON data from the Cartesi Machine
         // Note: Direct JSON parsing in Solidity is not available, so in a production setting

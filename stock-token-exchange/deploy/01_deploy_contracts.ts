@@ -85,6 +85,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   return true;
 };
 
+func.id = "deploy_stock_exchange_contracts"; // Add unique ID for hardhat-deploy
 func.tags = ["StockToken", "Exchange", "StockExchange"];
 func.dependencies = []; // Add dependencies if any
 

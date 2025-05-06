@@ -19,8 +19,10 @@ contract StockToken is ERC20, Ownable {
      */
     constructor(string memory name_, string memory symbol_, address initialOwner)
         ERC20(name_, symbol_)
-        Ownable(initialOwner) // Set the deployer as the initial owner
-    {}
+        Ownable()
+    {
+        _transferOwnership(initialOwner); // Set the initial owner
+    }
 
     /**
      * @dev Creates `amount` tokens and assigns them to `account`, increasing

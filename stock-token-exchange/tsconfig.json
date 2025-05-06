@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "ES2020", // Or a newer target if needed
+    "module": "NodeNext", // As indicated by the error
+    "moduleResolution": "NodeNext", // Make it compatible
+    "esModuleInterop": true, // Recommended for Node.js projects
+    "resolveJsonModule": true, // Often useful in Hardhat projects
+    "strict": true, // Enable strict type-checking
+    "skipLibCheck": true, // Skip type checking of declaration files
+    "forceConsistentCasingInFileNames": true, // Prevent issues on case-sensitive file systems
+    "outDir": "dist" // Optional: specify output directory if compiling
+  },
+  "include": [
+    "./scripts",
+    "./deploy",
+    "./test", // If you have tests
+    "./hardhat.config.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}
