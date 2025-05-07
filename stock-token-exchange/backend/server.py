@@ -609,11 +609,42 @@ def get_balance(user_address):
             exchange_token = 0
             
             try:
-                exchange_eth = exchange_contract.functions.getEthBalance(checksummed_address).call()
+                # Check available functions for debugging
+                contract_functions = dir(exchange_contract.functions)
+                print(f"Available contract functions: {contract_functions}")
+                
+                # Try getUserEthBalance first (correct function name)
+                if hasattr(exchange_contract.functions, 'getUserEthBalance'):
+                    exchange_eth = exchange_contract.functions.getUserEthBalance(checksummed_address).call()
+                    print(f"Retrieved ETH balance with getUserEthBalance: {exchange_eth}")
+                # Fallback to getEthBalance if needed
+                elif hasattr(exchange_contract.functions, 'getEthBalance'):
+                    exchange_eth = exchange_contract.functions.getEthBalance(checksummed_address).call()
+                    print(f"Retrieved ETH balance with getEthBalance: {exchange_eth}")
+                else:
+                    print("No ETH balance retrieval function found on contract")
+                
                 if stock_token_address:
-                    exchange_token = exchange_contract.functions.getTokenBalance(checksummed_address, stock_token_address).call()
+                    # Try getUserTokenBalance first (correct function name)
+                    if hasattr(exchange_contract.functions, 'getUserTokenBalance'):
+                        exchange_token = exchange_contract.functions.getUserTokenBalance(
+                            checksummed_address, 
+                            stock_token_address
+                        ).call()
+                        print(f"Retrieved token balance with getUserTokenBalance: {exchange_token}")
+                    # Fallback to getTokenBalance if needed
+                    elif hasattr(exchange_contract.functions, 'getTokenBalance'):
+                        exchange_token = exchange_contract.functions.getTokenBalance(
+                            checksummed_address, 
+                            stock_token_address
+                        ).call()
+                        print(f"Retrieved token balance with getTokenBalance: {exchange_token}")
+                    else:
+                        print("No token balance retrieval function found on contract")
             except Exception as e:
                 print(f"Error getting exchange balances: {str(e)}")
+                import traceback
+                traceback.print_exc()
             
             return jsonify({
                 "eth": eth_balance,

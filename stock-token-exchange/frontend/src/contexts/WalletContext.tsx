@@ -11,6 +11,7 @@ interface WalletContextType {
   networkWarning: boolean;
   isLoading: boolean;
   connectWallet: () => Promise<void>;
+  forceReconnect: () => Promise<void>;
   checkConnections: () => Promise<string[]>;
 }
 
@@ -22,6 +23,7 @@ const WalletContext = createContext<WalletContextType>({
   networkWarning: false,
   isLoading: false,
   connectWallet: async () => {},
+  forceReconnect: async () => {},
   checkConnections: async () => []
 });
 
@@ -35,7 +37,8 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     chainId,
     networkWarning,
     isLoading,
-    connectWallet
+    connectWallet,
+    forceReconnect
   } = useWallet();
   
   const checkConnectionsFunc = useCallback(async () => {
@@ -50,8 +53,9 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     networkWarning,
     isLoading,
     connectWallet,
+    forceReconnect,
     checkConnections: checkConnectionsFunc
-  }), [account, provider, signer, chainId, networkWarning, isLoading, connectWallet, checkConnectionsFunc]);
+  }), [account, provider, signer, chainId, networkWarning, isLoading, connectWallet, forceReconnect, checkConnectionsFunc]);
   
   return (
     <WalletContext.Provider value={value}>

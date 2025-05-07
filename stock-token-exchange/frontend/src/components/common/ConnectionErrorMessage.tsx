@@ -17,6 +17,7 @@ const ConnectionErrorMessage: React.FC<ConnectionErrorMessageProps> = ({ checkCo
           <li>Are the contracts deployed? Run <code>npx hardhat run --network localhost scripts/deploy.js</code></li>
           <li>Is the backend API server running? Start it with <code>cd backend && python server.py</code></li>
           <li>Is MetaMask connected to the Hardhat network (Chain ID: {CHAIN_CONFIG.chainId})?</li>
+          <li><strong>Account Switching Issue:</strong> If you've changed accounts in MetaMask, click "Reconnect Wallet" to sync the UI.</li>
         </ul>
         <div className="connection-actions">
           <button onClick={checkConnections} className="check-button">

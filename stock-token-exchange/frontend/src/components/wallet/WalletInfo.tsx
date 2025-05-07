@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { formatAddress } from '../../utils/formatting';
 import { CHAIN_CONFIG } from '../../utils/constants';
+import { useWalletContext } from '../../contexts/WalletContext';
 
 interface WalletInfoProps {
   account: string | null;
@@ -9,7 +10,7 @@ interface WalletInfoProps {
   tokenBalance: string;
   tokenSymbol: string;
   isLoading: boolean;
-  connectWallet: () => Promise<void>;
+  connectWallet?: () => Promise<void>;
 }
 
 const WalletInfo: React.FC<WalletInfoProps> = ({
@@ -18,37 +19,82 @@ const WalletInfo: React.FC<WalletInfoProps> = ({
   ethBalance,
   tokenBalance,
   tokenSymbol,
-  isLoading,
-  connectWallet
+  isLoading
 }) => {
+  const { connectWallet, forceReconnect } = useWalletContext();
+  const [isReconnecting, setIsReconnecting] = useState(false);
   const isCorrectNetwork = chainId && parseInt(chainId) === CHAIN_CONFIG.chainId;
+  
+  const handleForceReconnect = async () => {
+    setIsReconnecting(true);
+    try {
+      await forceReconnect();
+    } finally {
+      setIsReconnecting(false);
+    }
+  };
+  
+  const handleSwitchNetwork = async () => {
+    setIsReconnecting(true);
+    try {
+      await connectWallet();
+    } finally {
+      setIsReconnecting(false);
+    }
+  };
   
   return (
     <div className="wallet-info">
+      <div className="wallet-status-indicator">
+        <div className={`status-dot ${account ? (isCorrectNetwork ? 'connected' : 'wrong-network') : 'disconnected'}`}></div>
+        <span>{account 
+          ? (isCorrectNetwork 
+            ? 'Connected to Hardhat Network' 
+            : 'Wrong Network (Switch to Hardhat)') 
+          : 'Wallet Disconnected'}
+        </span>
+      </div>
       <div>
         <strong>Account:</strong> {account ? formatAddress(account) : 'Not connected'}
       </div>
       <div>
-        <strong>Chain ID:</strong> {chainId ? (isCorrectNetwork ? `${chainId} ✓` : `${chainId} ⚠️`) : 'Unknown'}
+        <strong>Chain ID:</strong> {chainId 
+          ? (isCorrectNetwork 
+            ? <span className="correct-network">{chainId} ✓</span> 
+            : <span className="wrong-network">{chainId} ⚠️</span>) 
+          : 'Unknown'}
       </div>
       <div>
-        <strong>ETH Balance:</strong> {parseFloat(ethBalance).toFixed(4)} ETH
+        <strong>ETH Balance:</strong> {parseFloat(ethBalance || "0").toFixed(4)} ETH
       </div>
       <div>
-        <strong>Token Balance:</strong> {parseFloat(tokenBalance).toFixed(4)} {tokenSymbol}
+        <strong>Token Balance:</strong> {parseFloat(tokenBalance || "0").toFixed(4)} {tokenSymbol}
       </div>
-      {!account && (
-        <button onClick={connectWallet} disabled={isLoading}>
-          Connect Wallet
-        </button>
-      )}
-      {account && (!chainId || parseInt(chainId) !== CHAIN_CONFIG.chainId) && (
+      
+      {/* Wallet action buttons */}
+      {!account ? (
         <button 
           onClick={connectWallet} 
-          className="reconnect-button"
-          title="Switch to Hardhat Network"
+          disabled={isLoading || isReconnecting} 
+          className="wallet-button primary-button"
         >
-          Switch to Hardhat Network
+          {isReconnecting ? 'Connecting...' : 'Connect Wallet'}
+        </button>
+      ) : !isCorrectNetwork ? (
+        <button 
+          onClick={handleSwitchNetwork} 
+          className="wallet-button network-button"
+          disabled={isReconnecting}
+        >
+          {isReconnecting ? 'Switching...' : 'Switch to Hardhat Network'}
+        </button>
+      ) : (
+        <button 
+          onClick={handleForceReconnect}
+          className="wallet-button reconnect-button"
+          disabled={isReconnecting}
+        >
+          {isReconnecting ? 'Refreshing...' : 'Refresh Wallet'}
         </button>
       )}
     </div>

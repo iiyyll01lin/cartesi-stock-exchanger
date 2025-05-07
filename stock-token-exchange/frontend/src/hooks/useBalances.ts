@@ -26,35 +26,48 @@ export function useBalances(
       
       // Try to fetch from blockchain first
       if (tokenContract && exchangeContract) {
-        const balances = await fetchBalancesFromContracts(
-          account,
-          tokenContract,
-          exchangeContract
-        );
-        
-        if (balances) {
-          setEthBalance(balances.ethBalance);
-          setTokenBalance(balances.tokenBalance);
-          setExchangeEthBalance(balances.exchangeEthBalance);
-          setExchangeTokenBalance(balances.exchangeTokenBalance);
-          addNotification('success', 'Balances updated');
-          return;
+        try {
+          const balances = await fetchBalancesFromContracts(
+            account,
+            tokenContract,
+            exchangeContract
+          );
+          
+          if (balances) {
+            setEthBalance(balances.ethBalance);
+            setTokenBalance(balances.tokenBalance);
+            setExchangeEthBalance(balances.exchangeEthBalance);
+            setExchangeTokenBalance(balances.exchangeTokenBalance);
+            console.log("Blockchain balances loaded:", balances);
+            addNotification('success', 'Balances updated');
+            return;
+          }
+        } catch (contractError: any) {
+          console.warn("Error fetching balances from contracts, falling back to API:", contractError);
+          // Don't show error notification here, just fallback to API
         }
       }
       
       // Fallback to API
-      const balanceData = await fetchUserBalanceFromApi(account);
-      
-      if (balanceData) {
-        setEthBalance(balanceData.eth || "0");
-        setTokenBalance(balanceData.token || "0");
-        setExchangeEthBalance(balanceData.exchange_eth || "0");
-        setExchangeTokenBalance(balanceData.exchange_token || "0");
-        addNotification('info', 'Balances fetched from API');
+      try {
+        const balanceData = await fetchUserBalanceFromApi(account);
+        
+        if (balanceData) {
+          setEthBalance(balanceData.eth || "0");
+          setTokenBalance(balanceData.token || "0");
+          setExchangeEthBalance(balanceData.exchange_eth || "0");
+          setExchangeTokenBalance(balanceData.exchange_token || "0");
+          console.log("API balances loaded:", balanceData);
+          addNotification('info', 'Balances fetched from API');
+        }
+      } catch (apiError: any) {
+        console.error("Error fetching balances from API:", apiError);
+        addNotification('warning', 'Unable to load balances');
       }
-    } catch (error: any) {
-      console.error("Error fetching balances:", error);
-      addNotification('error', `Failed to fetch balances: ${error.message}`);
+    } catch (error) {
+      const err = error as Error;
+      console.error("General error fetching balances:", err);
+      addNotification('error', `Failed to fetch balances: ${err.message || 'Unknown error'}`);
     } finally {
       setIsLoading(false);
     }

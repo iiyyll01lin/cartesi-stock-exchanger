@@ -14,6 +14,60 @@ export function useWallet() {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const { addNotification } = useNotifications();
   
+  // Force reconnect - explicitly checks current MetaMask account
+  const forceReconnect = useCallback(async () => {
+    if (!window.ethereum) {
+      addNotification('error', 'MetaMask not detected. Please install MetaMask.');
+      return;
+    }
+    
+    try {
+      setIsLoading(true);
+      
+      // Force a refresh of accounts
+      const accounts = await window.ethereum.request({ 
+        method: 'eth_requestAccounts'
+      });
+      
+      if (accounts.length > 0) {
+        const currentAccount = accounts[0];
+        setAccount(currentAccount);
+        console.log(`Force reconnected to account: ${currentAccount}`);
+        
+        // Initialize Ethers with a fresh provider
+        const web3Provider = new ethers.providers.Web3Provider(window.ethereum, "any");
+        setProvider(web3Provider);
+        setSigner(web3Provider.getSigner());
+        
+        // Get Network
+        try {
+          const chainId = await getChainId();
+          setChainId(chainId.toString());
+          
+          // Check if on the correct network
+          setNetworkWarning(chainId !== CHAIN_CONFIG.chainId);
+          
+          // Provide detailed feedback
+          addNotification(
+            'success', 
+            `Wallet refreshed: ${currentAccount.substring(0, 6)}...${currentAccount.substring(currentAccount.length - 4)} on network ${chainId}`
+          );
+        } catch (error) {
+          console.error("Error getting chain ID:", error);
+          addNotification('warning', 'Connected but could not determine network');
+        }
+      } else {
+        addNotification('warning', 'No accounts found. Please unlock MetaMask.');
+      }
+    } catch (error) {
+      const err = error as { message?: string };
+      console.error("Error reconnecting wallet:", err);
+      addNotification('error', `Failed to refresh wallet: ${err.message || 'Unknown error'}`);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [addNotification]);
+  
   // Connect wallet
   const connectWallet = useCallback(async () => {
     if (!window.ethereum) {
@@ -59,9 +113,10 @@ export function useWallet() {
                 addNotification('success', 'Successfully connected to Hardhat network');
               }
             }
-          } catch (switchError) {
+          } catch (error) {
+            const switchError = error as { message?: string };
             console.error("Error switching networks:", switchError);
-            addNotification('error', `Failed to switch networks: ${switchError.message}`, false);
+            addNotification('error', `Failed to switch networks: ${switchError.message || 'Unknown error'}`, false);
           }
         } else {
           setNetworkWarning(false);
@@ -69,9 +124,10 @@ export function useWallet() {
       } else {
         addNotification('warning', 'No accounts found. Please unlock MetaMask.');
       }
-    } catch (error: any) {
-      console.error("Error connecting wallet:", error);
-      addNotification('error', `Failed to connect wallet: ${error.message}`, false);
+    } catch (error) {
+      const err = error as { message?: string };
+      console.error("Error connecting wallet:", err);
+      addNotification('error', `Failed to connect wallet: ${err.message || 'Unknown error'}`, false);
     } finally {
       setIsLoading(false);
     }
@@ -113,9 +169,8 @@ export function useWallet() {
         const switched = await switchToHardhatNetwork();
         if (switched) {
           // Get the new chain ID after switching
-          const newChainId = await window.ethereum.request({ method: 'eth_chainId' });
-          const newDecimalChainId = parseInt(newChainId, 16);
-          setChainId(newDecimalChainId.toString());
+          const newChainId = await getChainId();
+          setChainId(newChainId.toString());
           addNotification('success', 'Successfully connected to Hardhat network');
           
           // Initialize provider and signer with the new network
@@ -126,9 +181,10 @@ export function useWallet() {
           // No need to reload the page, just update the state
           setNetworkWarning(false);
         }
-      } catch (switchError) {
+      } catch (error) {
+        const switchError = error as { message?: string };
         console.error("Error switching networks:", switchError);
-        addNotification('error', `Failed to switch networks: ${switchError.message}`, false);
+        addNotification('error', `Failed to switch networks: ${switchError.message || 'Unknown error'}`, false);
       }
     } else {
       setNetworkWarning(false);
@@ -171,6 +227,7 @@ export function useWallet() {
     chainId,
     networkWarning,
     isLoading,
-    connectWallet
+    connectWallet,
+    forceReconnect
   };
 }

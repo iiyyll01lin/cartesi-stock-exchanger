@@ -120,18 +120,54 @@ export async function fetchBalancesFromContracts(
   if (!userAddress || !tokenContract || !exchangeContract) return null;
   
   try {
-    // Get ETH balance
-    const ethBalance = await exchangeContract.getEthBalance(userAddress);
+    // Get user's wallet ETH balance (not on the exchange)
+    const ethProvider = exchangeContract.provider;
+    const ethBalance = await ethProvider.getBalance(userAddress);
     
-    // Get token balance
+    // Get user's wallet token balance (not on the exchange)
     const tokenBalance = await tokenContract.balanceOf(userAddress);
     
-    // Get exchange balances
-    const exchangeEthBalance = await exchangeContract.getEthBalance(userAddress);
-    const exchangeTokenBalance = await exchangeContract.getTokenBalance(
-      CONTRACT_ADDRESSES.token,
-      userAddress
-    );
+    // Get user's exchange ETH balance
+    let exchangeEthBalance;
+    try {
+      // Check if function exists
+      if (typeof exchangeContract.getUserEthBalance === 'function') {
+        exchangeEthBalance = await exchangeContract.getUserEthBalance(userAddress);
+      } else {
+        console.error('getUserEthBalance function not found on exchange contract');
+        exchangeEthBalance = ethers.BigNumber.from(0);
+      }
+    } catch (error) {
+      console.error('Error getting exchange ETH balance:', error);
+      exchangeEthBalance = ethers.BigNumber.from(0);
+    }
+    
+    // Get user's exchange token balance
+    let exchangeTokenBalance;
+    try {
+      // Check if function exists
+      if (typeof exchangeContract.getUserTokenBalance === 'function') {
+        exchangeTokenBalance = await exchangeContract.getUserTokenBalance(
+          userAddress,
+          CONTRACT_ADDRESSES.token
+        );
+      } else {
+        console.error('getUserTokenBalance function not found on exchange contract');
+        exchangeTokenBalance = ethers.BigNumber.from(0);
+      }
+    } catch (error) {
+      console.error('Error getting exchange token balance:', error);
+      exchangeTokenBalance = ethers.BigNumber.from(0);
+    }
+    
+    // Log balances for debugging
+    console.log('User balances:', {
+      userAddress,
+      walletEth: ethers.utils.formatEther(ethBalance),
+      walletToken: ethers.utils.formatEther(tokenBalance),
+      exchangeEth: ethers.utils.formatEther(exchangeEthBalance),
+      exchangeToken: ethers.utils.formatEther(exchangeTokenBalance)
+    });
     
     return {
       ethBalance: ethers.utils.formatEther(ethBalance),

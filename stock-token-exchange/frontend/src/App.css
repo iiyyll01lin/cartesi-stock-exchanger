@@ -42,6 +42,98 @@
   color: var(--primary-color);
 }
 
+/* Add specific styling for wallet connection states */
+.wallet-status-indicator {
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
+  padding: 8px;
+  border-radius: var(--border-radius);
+  background-color: rgba(0,0,0,0.05);
+}
+
+.wallet-status-indicator .status-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  margin-right: 10px;
+}
+
+.wallet-status-indicator .status-dot.connected {
+  background-color: var(--success-color);
+  box-shadow: 0 0 10px var(--success-color);
+}
+
+.wallet-status-indicator .status-dot.disconnected {
+  background-color: var(--secondary-color);
+}
+
+.wallet-status-indicator .status-dot.wrong-network {
+  background-color: var(--warning-color);
+  box-shadow: 0 0 10px var(--warning-color);
+}
+
+.correct-network {
+  color: var(--success-color);
+  font-weight: bold;
+}
+
+.wrong-network {
+  color: var(--warning-color);
+  font-weight: bold;
+}
+
+/* Wallet buttons styling */
+.wallet-button {
+  display: block;
+  width: 100%;
+  padding: 10px;
+  margin-top: 15px;
+  border-radius: var(--border-radius);
+  border: none;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all var(--transition-speed) ease;
+}
+
+.wallet-button.primary-button {
+  background-color: var(--primary-color);
+  color: white;
+}
+
+.wallet-button.primary-button:hover {
+  background-color: var(--primary-hover);
+}
+
+.wallet-button.network-button {
+  background-color: var(--warning-color);
+  color: white;
+}
+
+.wallet-button.network-button:hover {
+  background-color: #e68a00;
+}
+
+.wallet-button.reconnect-button {
+  background-color: var(--info-color);
+  color: white;
+}
+
+.wallet-button.reconnect-button:hover {
+  background-color: var(--primary-hover);
+}
+
+.wallet-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Balance values highlighting */
+.wallet-info div:nth-child(4), 
+.wallet-info div:nth-child(5) {
+  font-weight: 600;
+}
+
 /* Dark Theme (will be toggled via JS) */
 [data-theme="dark"] {
   --primary-color: #3498db;

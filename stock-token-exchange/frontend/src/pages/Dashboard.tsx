@@ -108,7 +108,6 @@ const Dashboard: React.FC = () => {
         tokenBalance={tokenBalance}
         tokenSymbol={tokenSymbol}
         isLoading={isLoading}
-        connectWallet={connectWallet}
       />
       
       <div className="message" style={{ color: errorMessage ? 'red' : 'inherit' }}>

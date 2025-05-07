@@ -62,15 +62,19 @@ services:
     ports:
       - "5001:5001"
     depends_on:
-      blockchain: # Ensure blockchain is ready before backend starts
+      blockchain:
+        # Ensure blockchain is ready before backend starts
         condition: service_started # Or service_healthy if healthcheck is added
-      deployer:   # Ensure contracts are deployed and .env updated
+      deployer:
+        # Ensure contracts are deployed and .env updated
         condition: service_completed_successfully # Wait for deployer script to finish
     networks:
       - stock-exchange-network
-    secrets: # Define secret usage for backend
+    secrets:
+      # Define secret usage for backend
       - admin_private_key
-    environment: # Pass necessary env vars from the root .env AND override NODE_URL
+    environment:
+      # Pass necessary env vars from the root .env AND override NODE_URL
       - FLASK_APP=${FLASK_APP:-server.py} # Use from root .env or default
       - FLASK_DEBUG=${FLASK_DEBUG:-1} # Use from root .env or default
       - NODE_URL=http://blockchain:8545 # Override NODE_URL for container network
@@ -99,9 +103,9 @@ services:
     environment:
       - NODE_ENV=development
       - CHOKIDAR_USEPOLLING=true
-      - WATCHPACK_POLLING=true  # Add this line
-      - FAST_REFRESH=false      # Add this line
-      - REACT_FAST_REFRESH=false # Add this line
+      - WATCHPACK_POLLING=true
+      - FAST_REFRESH=false
+      - REACT_FAST_REFRESH=false
     depends_on:
       - backend
       - deployer # Ensure deployments are potentially ready
