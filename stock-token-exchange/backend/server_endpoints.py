@@ -1,3 +1,30 @@
+from flask import jsonify, request
+from web3 import Web3
+import logging
+
+# Assuming 'app' is the Flask app instance defined in server.py
+# and other necessary variables like w3, exchange_contract, etc., are also globally available
+# or passed/imported appropriately.
+# This is a common pattern if server_endpoints.py is part of a larger Flask application
+# structured across multiple files.
+
+# If server.py defines these, and this file is imported by server.py,
+# they might be accessible. Otherwise, they need to be explicitly imported or passed.
+# For example, from ..server import app, w3, exchange_contract, stock_token_contract, \
+#                                 get_user_eth_balance, get_user_token_balance, \
+#                                 stock_token_address, mock_db, logger, get_order_from_blockchain
+
+# For the purpose of this fix, we'll assume they are available in the global scope
+# as if this file's content was part of server.py or they are correctly imported.
+
+# Mock database (if not imported from server.py)
+# mock_db = {"balances": {}, "orders": {}} 
+# logger = logging.getLogger(__name__) # If not imported
+
+# It's better to import these from where they are defined, e.g., your main server.py
+from server import app, w3, exchange_contract, stock_token_contract, get_user_eth_balance, get_user_token_balance, stock_token_address, mock_db, logger, get_order_from_blockchain
+
+
 # Additional endpoints to implement for the server.py file
 
 # Trigger order matching endpoint
@@ -88,41 +115,60 @@ def process_results(index):
 # Balance endpoint
 @app.route('/api/balance/<user_address>', methods=['GET'])
 def get_balance(user_address):
-    """Get the balance for a user"""
-    # Try to get from blockchain first if Web3 is set up
-    if w3 and w3.is_connected() and exchange_contract and stock_token_contract:
+    """Get the balance for a user, including wallet and exchange balances."""
+    if w3 and w3.is_connected() and exchange_contract:
         try:
-            eth_balance = get_user_eth_balance(user_address)
-            token_balance = get_user_token_balance(user_address, stock_token_address)
+            checksum_user_address = Web3.to_checksum_address(user_address)
+
+            # Fetch Wallet Balances
+            wallet_eth_balance_wei = w3.eth.get_balance(checksum_user_address)
+            
+            wallet_token_balance_wei = 0
+            if stock_token_contract: # Ensure stock_token_contract is initialized
+                wallet_token_balance_wei = stock_token_contract.functions.balanceOf(checksum_user_address).call()
+            else:
+                logger.warning("StockToken contract not available for fetching wallet token balance.")
+
+            # Fetch Exchange Balances
+            exchange_eth_balance_wei = get_user_eth_balance(user_address) 
+            exchange_token_balance_wei = get_user_token_balance(user_address, stock_token_address)
             
             return jsonify({
-                "eth": w3.from_wei(eth_balance, 'ether'),
-                "token": w3.from_wei(token_balance, 'ether'),
-                "exchange_eth": w3.from_wei(eth_balance, 'ether'),
-                "exchange_token": w3.from_wei(token_balance, 'ether')
+                "eth": float(w3.from_wei(wallet_eth_balance_wei, 'ether')),
+                "token": float(w3.from_wei(wallet_token_balance_wei, 'ether')),
+                "exchange_eth": float(w3.from_wei(exchange_eth_balance_wei, 'ether')),
+                "exchange_token": float(w3.from_wei(exchange_token_balance_wei, 'ether'))
             })
         except Exception as e:
-            logger.error(f"Error fetching balances from blockchain: {e}")
-            # Fall back to mock data
+            logger.error(f"Error fetching balances from blockchain for {user_address}: {e}")
+            # Fall through to mock data or error response if configured
     
-    # Use mock data if not connected to blockchain or if error occurred
+    logger.warning(f"Falling back to mock data for user {user_address} due to Web3 issue or error.")
     if user_address in mock_db.get("balances", {}):
         user_balances = mock_db["balances"][user_address]
         token_balances = user_balances.get("tokens", {})
-        token_balance = token_balances.get(stock_token_address, 0) if stock_token_address else 0
         
+        token_balance_mock = 0
+        if stock_token_address and stock_token_address in token_balances:
+            token_balance_mock = token_balances[stock_token_address]
+        elif not stock_token_address and token_balances:
+            pass 
+
         return jsonify({
-            "eth": user_balances.get("eth", 0),
-            "token": token_balance,
-            "exchange_eth": user_balances.get("eth", 0),
-            "exchange_token": token_balance
+            "eth": user_balances.get("eth", 0), 
+            "token": token_balance_mock, 
+            "exchange_eth": user_balances.get("exchange_eth", user_balances.get("eth", 0)), 
+            "exchange_token": token_balances.get("exchange_token", token_balance_mock) 
         })
     else:
-        # Initialize empty balances for new user
         if "balances" not in mock_db:
             mock_db["balances"] = {}
-        mock_db["balances"][user_address] = {"eth": 0, "tokens": {}}
-        
+        mock_db["balances"][user_address] = {
+            "eth": 0, 
+            "tokens": {}, 
+            "exchange_eth": 0, 
+            "exchange_token": 0
+        }
         return jsonify({
             "eth": 0,
             "token": 0,

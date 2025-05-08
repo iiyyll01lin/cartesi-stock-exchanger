@@ -16,8 +16,8 @@ export const CONTRACT_ADDRESSES = {
 
 // Chain configuration
 export const CHAIN_CONFIG = {
-  chainId: CONTRACT_CHAIN_ID,
-  chainIdHex: `0x${CONTRACT_CHAIN_ID.toString(16)}`,
+  chainId: CONTRACT_CHAIN_ID || 31337, // Fallback to Hardhat's default chain ID
+  chainIdHex: CONTRACT_CHAIN_ID ? `0x${CONTRACT_CHAIN_ID.toString(16)}` : '0x7a69', // 0x7a69 is hex for 31337
   chainName: 'Hardhat Local Network',
   nativeCurrency: {
     name: 'Ethereum',

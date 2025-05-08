@@ -1,7 +1,7 @@
 // Balances hook
 import { useState, useEffect, useCallback } from 'react';
 import { ethers } from 'ethers';
-import { fetchBalancesFromContracts } from '../services/contracts';
+import { fetchBalances as fetchBalancesFromContract } from '../services/contracts';
 import { fetchUserBalanceFromApi } from '../services/api';
 import { useNotifications } from './useNotifications';
 
@@ -18,8 +18,11 @@ export function useBalances(
   const { addNotification } = useNotifications();
   
   // Fetch balances
-  const fetchBalances = useCallback(async () => {
+  const fetchUserBalances = useCallback(async () => {
     if (!account) return;
+    
+    // Avoid multiple concurrent balance fetches
+    if (isLoading) return;
     
     try {
       setIsLoading(true);
@@ -27,8 +30,10 @@ export function useBalances(
       // Try to fetch from blockchain first
       if (tokenContract && exchangeContract) {
         try {
-          const balances = await fetchBalancesFromContracts(
+          const provider = tokenContract.provider as ethers.providers.Web3Provider;
+          const balances = await fetchBalancesFromContract(
             account,
+            provider,
             tokenContract,
             exchangeContract
           );
@@ -39,7 +44,7 @@ export function useBalances(
             setExchangeEthBalance(balances.exchangeEthBalance);
             setExchangeTokenBalance(balances.exchangeTokenBalance);
             console.log("Blockchain balances loaded:", balances);
-            addNotification('success', 'Balances updated');
+            // Don't show notification for every balance update
             return;
           }
         } catch (contractError: any) {
@@ -58,15 +63,16 @@ export function useBalances(
           setExchangeEthBalance(balanceData.exchange_eth || "0");
           setExchangeTokenBalance(balanceData.exchange_token || "0");
           console.log("API balances loaded:", balanceData);
-          addNotification('info', 'Balances fetched from API');
+          // Don't show notification for API fallback
         }
       } catch (apiError: any) {
         console.error("Error fetching balances from API:", apiError);
-        addNotification('warning', 'Unable to load balances');
+        // Don't show notification for API errors, just use current values
       }
     } catch (error) {
       const err = error as Error;
       console.error("General error fetching balances:", err);
+      // Only show critical errors
       addNotification('error', `Failed to fetch balances: ${err.message || 'Unknown error'}`);
     } finally {
       setIsLoading(false);
@@ -75,10 +81,21 @@ export function useBalances(
   
   // Fetch balances when account or contracts change
   useEffect(() => {
-    if (account) {
-      fetchBalances();
-    }
-  }, [account, tokenContract, exchangeContract, fetchBalances]);
+    let isActive = true;
+    
+    const loadBalances = async () => {
+      if (account && isActive) {
+        await fetchUserBalances();
+      }
+    };
+    
+    loadBalances();
+    
+    // Cleanup function to prevent setting state after unmount
+    return () => {
+      isActive = false;
+    };
+  }, [account, tokenContract?.address, exchangeContract?.address]); // Only depend on the addresses, not the entire contract objects
   
   return {
     ethBalance,
@@ -86,6 +103,6 @@ export function useBalances(
     exchangeEthBalance,
     exchangeTokenBalance,
     isLoading,
-    fetchBalances
+    fetchUserBalances, // Expose fetchUserBalances
   };
 }

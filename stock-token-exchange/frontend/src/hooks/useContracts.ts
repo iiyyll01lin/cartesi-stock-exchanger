@@ -1,7 +1,7 @@
 // Contracts hook
 import { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
-import { initializeContracts, validateContracts, getTokenDetails } from '../services/contracts';
+import { initializeContracts, validateContracts, fetchTokenDetails } from '../services/contracts';
 import { useNotifications } from './useNotifications';
 import { CONTRACT_ADDRESSES } from '../utils/constants';
 import { EXCHANGE_ABI, STOCK_TOKEN_ABI } from '../deployments';
@@ -29,23 +29,32 @@ export function useContracts(provider: ethers.providers.Web3Provider | null, sig
       try {
         console.log("Initializing contracts with provider and signer...");
         
+        // Clear any stale block number caches by requesting the latest block number first
+        try {
+          const latestBlock = await provider.getBlockNumber();
+          console.log(`Current blockchain latest block: ${latestBlock}`);
+          
+          // Force a small delay to ensure proper initialization
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        } catch (blockError) {
+          console.warn("Error getting latest block during initialization:", blockError);
+          // Continue despite error
+        }
+        
         // Get current network for diagnostic info
         const network = await provider.getNetwork();
         console.log("Connected to network:", network);
-        
-        console.log("Contract addresses:", CONTRACT_ADDRESSES);
-        console.log("Signer details:", {
-          isSigner: signer instanceof ethers.Signer,
-          hasAddress: signer ? (await signer.getAddress()).substring(0, 10) + '...' : 'N/A'
-        });
         
         // Validate that contracts are deployed on this network
         const isValid = await validateContracts(provider);
         setContractsValid(isValid);
         
         if (!isValid) {
-          console.error("Contracts not deployed at the specified addresses", CONTRACT_ADDRESSES);
-          addNotification('error', 'Contracts not deployed at the specified addresses. Check if Hardhat node is running and if you are connected to the correct network.', false);
+          console.error("Contracts not deployed at the specified addresses on this network", CONTRACT_ADDRESSES);
+          // Don't show repetitive notifications - UI already indicates network mismatch
+          // Use default values for token details when on the wrong network
+          setTokenName("Stock Token");
+          setTokenSymbol("STOCK");
           return;
         }
         
@@ -73,16 +82,20 @@ export function useContracts(provider: ethers.providers.Web3Provider | null, sig
         setStockTokenContract(tokenContract);
         
         // Get token details
-        const details = await getTokenDetails(tokenContract);
+        const details = await fetchTokenDetails(tokenContract);
         if (details) {
           setTokenName(details.name);
           setTokenSymbol(details.symbol);
           console.log("Token details:", details);
-          addNotification('success', 'Contracts initialized successfully');
+          // Don't show notification for every contract initialization
         }
       } catch (error: any) {
         console.error("Error initializing contracts:", error);
-        addNotification('error', `Failed to initialize contracts: ${error.message}`, false);
+        // Only show critical errors to avoid notification spam
+        if (error.message.includes("contract not deployed") || 
+            error.message.includes("invalid address")) {
+          addNotification('error', `Failed to initialize contracts: ${error.message}`, false);
+        }
       }
     };
     

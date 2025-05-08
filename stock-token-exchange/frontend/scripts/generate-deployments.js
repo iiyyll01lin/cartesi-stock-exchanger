@@ -43,6 +43,13 @@ try {
   console.log(`Exchange address: ${exchangeDeployment.address}`);
   console.log(`StockToken address: ${stockTokenDeployment.address}`);
   
+  // Create a backup of existing file if it exists
+  if (fs.existsSync(OUTPUT_FILE)) {
+    const backupFile = `${OUTPUT_FILE}.bak`;
+    console.log(`Creating backup of existing file at ${backupFile}`);
+    fs.copyFileSync(OUTPUT_FILE, backupFile);
+  }
+  
   // Generate the TypeScript file content
   const content = `// This file is auto-generated from contract deployment information
 // Generated on: ${new Date().toISOString()}

@@ -40,7 +40,7 @@ services:
                ./update-env.sh --exchange-address $$EXCHANGE_ADDR --token-address $$TOKEN_ADDR --frontend-deployments ./frontend/src/deployments/index.ts && \
                # Also create a direct copy of the deployment info for the frontend
                mkdir -p /app/stock-token-exchange/frontend/src/deployments && \
-               echo '// This file is auto-generated\\nexport const EXCHANGE_ADDRESS = \"'$$EXCHANGE_ADDR'\";\\nexport const STOCK_TOKEN_ADDRESS = \"'$$TOKEN_ADDR'\";\\nexport const EXCHANGE_ABI = [];\\nexport const STOCK_TOKEN_ABI = [];\\nexport const CONTRACT_CHAIN_ID = 31337;\\nexport default {exchange:{address:EXCHANGE_ADDRESS,abi:EXCHANGE_ABI},stockToken:{address:STOCK_TOKEN_ADDRESS,abi:STOCK_TOKEN_ABI},chainId:CONTRACT_CHAIN_ID};' > /app/stock-token-exchange/frontend/src/deployments/index.ts"
+               echo $'// This file is auto-generated\nexport const EXCHANGE_ADDRESS = \"'$$EXCHANGE_ADDR$'\";\nexport const STOCK_TOKEN_ADDRESS = \"'$$TOKEN_ADDR$'\";\nexport const EXCHANGE_ABI = [];\nexport const STOCK_TOKEN_ABI = [];\nexport const CONTRACT_CHAIN_ID = 31337;\nexport default {exchange:{address:EXCHANGE_ADDRESS,abi:EXCHANGE_ABI},stockToken:{address:STOCK_TOKEN_ADDRESS,abi:STOCK_TOKEN_ABI},chainId:CONTRACT_CHAIN_ID};' > /app/stock-token-exchange/frontend/src/deployments/index.ts"
     depends_on:
       blockchain:
         condition: service_started

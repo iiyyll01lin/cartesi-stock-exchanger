@@ -50,7 +50,7 @@ const Dashboard: React.FC = () => {
     exchangeEthBalance,
     exchangeTokenBalance,
     isLoading: balancesLoading,
-    // fetchBalances is defined but unused in the component
+    fetchUserBalances, // Expose fetchUserBalances
   } = useBalances(account, stockTokenContract, exchangeContract);
   
   // Get orders
@@ -75,6 +75,13 @@ const Dashboard: React.FC = () => {
   
   const isLoading = walletLoading || balancesLoading || ordersLoading;
   
+  // Callback to refresh balances after a transaction
+  const handleTransactionSuccess = () => {
+    if (fetchUserBalances) {
+      fetchUserBalances();
+    }
+  };
+
   // Get deposit/withdraw functions
   const {
     depositETH,
@@ -83,7 +90,7 @@ const Dashboard: React.FC = () => {
     withdrawToken,
     isDepositing,
     isWithdrawing
-  } = useDepositWithdraw(exchangeContract, stockTokenContract, tokenAddress);
+  } = useDepositWithdraw(exchangeContract, stockTokenContract, tokenAddress, handleTransactionSuccess); // Pass the callback
   
   const onPlaceOrder = () => {
     if (!account) {
@@ -107,6 +114,7 @@ const Dashboard: React.FC = () => {
         ethBalance={ethBalance}
         tokenBalance={tokenBalance}
         tokenSymbol={tokenSymbol}
+        exchangeEthBalance={exchangeEthBalance}
         isLoading={isLoading}
       />
       
@@ -143,6 +151,8 @@ const Dashboard: React.FC = () => {
             orderPriceError={orderPriceError}
             onPlaceOrder={onPlaceOrder}
             isLoading={isLoading}
+            exchangeEthBalance={exchangeEthBalance}
+            isConnectedToCorrectNetwork={!networkWarning}
           />
           
           <DepositWithdrawForm
@@ -155,6 +165,7 @@ const Dashboard: React.FC = () => {
             isWithdrawing={isWithdrawing}
             exchangeEthBalance={exchangeEthBalance}
             exchangeTokenBalance={exchangeTokenBalance}
+            isConnectedToCorrectNetwork={!networkWarning}
           />
         </div>
       </div>

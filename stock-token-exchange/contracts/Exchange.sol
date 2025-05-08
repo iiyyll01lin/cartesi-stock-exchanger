@@ -168,9 +168,27 @@ contract Exchange {
 
         if (_isBuyOrder) {
             // Lock ETH for buy order
-            uint256 cost = _amount * _price; // Potential overflow risk, use SafeMath if needed
+            // Calculate cost in wei: _amount * _price (wei per token)
+            // Note: We're using SafeMath implicitly as Solidity 0.8.0+ has built-in overflow checking
+            
+            // Calculate cost safely to avoid overflow
+            // First divide price by 1e18 to get the unit price in ETH
+            // Then multiply by amount to get total cost
+            uint256 exactCost = (_amount * _price) / 1e18; // Convert from wei to ETH units
+            
+            // Use a small safety margin (0.5%) to handle potential precision issues
+            // Matches the frontend safety margin
+            uint256 cost = exactCost + (exactCost * 5 / 1000);
+            
+            // Ensure we have enough ETH, using the cost with safety margin for the check
             require(ethDeposits[msg.sender] >= cost, "Insufficient ETH for buy order");
-            ethDeposits[msg.sender] -= cost; // Pre-lock funds
+            
+            // Log balances before locking funds
+            emit ETHDeposited(msg.sender, 0); // Using existing event as a log (amount 0 indicates this is just a log)
+            
+            // Deduct the exact cost (not the padded one) from user's ETH balance
+            // We use exactCost for the actual deduction to ensure precision
+            ethDeposits[msg.sender] -= exactCost; // Pre-lock funds
         } else {
             // Lock Tokens for sell order
             require(deposits[_tokenAddress][msg.sender] >= _amount, "Insufficient tokens for sell order");
@@ -365,7 +383,7 @@ contract Exchange {
             require(trade.amount <= sellOrder.amount, "Trade amount exceeds sell order amount");
 
             // Calculate the actual cost of the trade using the execution price
-            uint256 tradeCost = trade.amount * trade.price;
+            uint256 tradeCost = trade.amount * trade.price / 1e18; // Convert from wei to ETH units
 
             // Update orders: Mark as inactive if fully filled, or reduce amount if partially filled
             // For simplicity, we'll assume partial fills can happen
@@ -391,7 +409,7 @@ contract Exchange {
             deposits[trade.token][buyOrder.user] += trade.amount;
 
             // 3. Refund buyer if they locked more ETH than needed (buy price > execution price)
-            uint256 originalLocked = trade.amount * buyOrder.price;
+            uint256 originalLocked = trade.amount * buyOrder.price / 1e18; // Convert from wei to ETH units
             if (originalLocked > tradeCost) {
                 ethDeposits[buyOrder.user] += (originalLocked - tradeCost);
             }
@@ -418,11 +436,15 @@ contract Exchange {
         return orders[_orderId];
     }
 
+    function getOrderCount() external view returns (uint256) {
+        return _orderIds.current();
+    }
+
     function getUserTokenBalance(address _user, address _tokenAddress) external view returns (uint256) {
         return deposits[_tokenAddress][_user];
     }
 
-     function getUserEthBalance(address _user) external view returns (uint256) {
+    function getUserEthBalance(address _user) external view returns (uint256) {
         return ethDeposits[_user];
     }
 }

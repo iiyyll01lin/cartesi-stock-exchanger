@@ -120,7 +120,7 @@ exchange_address = None
 stock_token_address = None
 exchange_abi = None
 stock_token_abi = None
-admin_private_key = None
+admin_private_key = None # This global is distinct from ADMIN_PRIVATE_KEY (uppercase)
 node_url = None
 max_orders_per_batch = 100 # Default value
 
@@ -142,20 +142,41 @@ def load_contract_abi(contract_name):
 
 def setup_web3():
     """Initializes Web3 connection and contract instances."""
-    global w3, exchange_contract, stock_token_contract, exchange_address, stock_token_address, exchange_abi, stock_token_abi, admin_private_key, node_url, max_orders_per_batch
+    # Declare globals that this function will assign or use from module scope
+    global w3, exchange_contract, stock_token_contract, exchange_address, stock_token_address
+    global exchange_abi, stock_token_abi, node_url, max_orders_per_batch
+    # Note: admin_private_key (lowercase) is listed as global, but ADMIN_PRIVATE_KEY (uppercase)
+    # holds the securely loaded key at module level. We will use ADMIN_PRIVATE_KEY for status.
 
+    # Explicitly load the .env file from the /app directory
+    # This ensures that even during Flask reloads, we are loading the correct .env
+    # Assumes server.py is in /app/backend, so .parent.parent is /app
+    dotenv_path = Path(__file__).resolve().parent.parent / '.env'
+    if dotenv_path.exists():
+        logger.info(f"Attempting to load .env file from: {dotenv_path}")
+        load_dotenv(dotenv_path=dotenv_path, override=True)
+    else:
+        logger.warning(f".env file not found at {dotenv_path}, relying on existing environment variables or defaults.")
+        # Still call load_dotenv without path to try default locations, or rely on Docker env vars
+        load_dotenv(override=True)
+
+
+    # Read configuration from environment AFTER load_dotenv
+    # Assign to global 'node_url' and 'max_orders_per_batch'
     node_url = os.getenv('NODE_URL', 'http://localhost:8545') # Default if not set
+    max_orders_per_batch = int(os.getenv('MAX_ORDERS_PER_BATCH', 100)) # Load from env with default
+    
+    # These are read here to be logged and then potentially updated in the loop below
     exchange_address_env = os.getenv('EXCHANGE_CONTRACT_ADDRESS')
     stock_token_address_env = os.getenv('STOCK_TOKEN_ADDRESS')
-    admin_private_key = os.getenv('ADMIN_PRIVATE_KEY')
-    max_orders_per_batch = int(os.getenv('MAX_ORDERS_PER_BATCH', 100)) # Load from env with default
 
-    logger.info(f"--- Backend Configuration ---")
-    logger.info(f"NODE_URL: {node_url}")
+    logger.info(f"--- Backend Configuration (after load_dotenv in setup_web3) ---")
+    logger.info(f"NODE_URL from os.getenv: {node_url}") # Log the actual value being used
     logger.info(f"EXCHANGE_CONTRACT_ADDRESS (from env): {exchange_address_env}")
     logger.info(f"STOCK_TOKEN_ADDRESS (from env): {stock_token_address_env}")
     logger.info(f"MAX_ORDERS_PER_BATCH: {max_orders_per_batch}")
-    logger.info(f"Admin PK loaded: {'Yes' if admin_private_key else 'No'}")
+    # Log status of the module-level ADMIN_PRIVATE_KEY (uppercase)
+    logger.info(f"Admin PK loaded (module scope): {'Yes' if ADMIN_PRIVATE_KEY else 'No'}")
     logger.info(f"-----------------------------")
 
     # --- Wait for Deployment ---
@@ -166,25 +187,38 @@ def setup_web3():
     zero_address = "0x" + "0" * 40
     valid_address_found = False
 
-    while time.time() - start_time < max_wait_time:
-        # Reload .env in case it was updated after initial load
-        load_dotenv(override=True)
-        exchange_address_env = os.getenv('EXCHANGE_CONTRACT_ADDRESS')
-        stock_token_address_env = os.getenv('STOCK_TOKEN_ADDRESS')
+    # Use the initially read values for the loop's first check.
+    # These will be updated inside the loop if .env changes.
+    current_exchange_address_from_env = exchange_address_env
+    current_stock_token_address_from_env = stock_token_address_env
 
-        if exchange_address_env and exchange_address_env != zero_address and stock_token_address_env and stock_token_address_env != zero_address:
+    while time.time() - start_time < max_wait_time:
+        # Reload .env in case it was updated after initial load (e.g., by deployer script)
+        load_dotenv(override=True)
+        # Re-read contract addresses after this load_dotenv
+        current_exchange_address_from_env = os.getenv('EXCHANGE_CONTRACT_ADDRESS')
+        current_stock_token_address_from_env = os.getenv('STOCK_TOKEN_ADDRESS')
+        # Optional: Re-read node_url if it could change during this specific loop,
+        # though the main concern was its value on Flask reload (handled by load_dotenv at function start).
+        # node_url = os.getenv('NODE_URL', node_url) # Updates global node_url
+
+        if current_exchange_address_from_env and current_exchange_address_from_env != zero_address and \
+           current_stock_token_address_from_env and current_stock_token_address_from_env != zero_address:
             logger.info("Valid contract addresses found in environment variables.")
             try:
-                exchange_address = Web3.to_checksum_address(exchange_address_env)
-                stock_token_address = Web3.to_checksum_address(stock_token_address_env)
+                # Assign to global variables (declared global at the start of setup_web3)
+                exchange_address = Web3.to_checksum_address(current_exchange_address_from_env)
+                stock_token_address = Web3.to_checksum_address(current_stock_token_address_from_env)
                 valid_address_found = True
-                break
+                logger.info(f"Using Exchange: {exchange_address}, Token: {stock_token_address}")
+                break  # Exit loop once valid addresses are found and processed
             except Exception as e:
-                logger.error(f"Error converting addresses to checksum format: {e}")
-                # Try again in next iteration
+                logger.error(f"Error checksumming address ({current_exchange_address_from_env}, {current_stock_token_address_from_env}): {e}. Will retry.")
+                valid_address_found = False # Ensure we retry if checksumming fails
         else:
-            logger.warning(f"Waiting for valid contract addresses in .env... (found: Exchange={exchange_address_env}, Token={stock_token_address_env})")
-            time.sleep(5) # Wait 5 seconds before checking again
+            logger.warning(f"Waiting for valid contract addresses in .env... (found: Exchange={current_exchange_address_from_env}, Token={current_stock_token_address_from_env})")
+        
+        time.sleep(5) # Wait 5 seconds before checking again
 
     if not valid_address_found:
         logger.error("FATAL: Timed out waiting for valid contract addresses in .env file. Backend cannot start.")
@@ -537,12 +571,23 @@ def handle_orders():
         # Assign ID and store (mocking contract behavior)
         order_id = mock_db["next_order_id"]
         mock_db["next_order_id"] += 1
+        
+        # Fix for amount/price parsing - handle both fields properly
+        # For buy orders, amount should be an integer token amount, price is ETH per token
+        try:
+            # First try to get the amount correctly - should be an integer for token amount
+            parsed_amount = int(float(amount)) if isinstance(amount, str) else int(amount)
+            # Price should be a float (ETH per token)
+            parsed_price = float(price) if isinstance(price, str) else float(price)
+        except ValueError as e:
+            return jsonify({"error": f"Invalid order parameters: {str(e)}"}), 400
+            
         new_order = {
             "id": order_id,
             "user": user,
             "token": token,
-            "amount": int(amount),
-            "price": int(price) if isinstance(price, int) else float(price),
+            "amount": parsed_amount,
+            "price": parsed_price,
             "isBuyOrder": bool(is_buy_order),
             "active": True # New orders are active
         }

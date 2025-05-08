@@ -85,11 +85,18 @@ export function useWallet() {
         const currentAccount = accounts[0];
         setAccount(currentAccount);
         addNotification('success', `Wallet connected: ${currentAccount.substring(0, 6)}...${currentAccount.substring(currentAccount.length - 4)}`);
-        
-        // Initialize Ethers
-        const web3Provider = new ethers.providers.Web3Provider(window.ethereum);
-        setProvider(web3Provider);
-        setSigner(web3Provider.getSigner());
+           // Initialize Ethers
+      const web3Provider = new ethers.providers.Web3Provider(window.ethereum);
+      setProvider(web3Provider);
+      setSigner(web3Provider.getSigner());
+      
+      // Get user's ETH balance for immediate display
+      try {
+        const userBalance = await web3Provider.getBalance(currentAccount);
+        console.log(`User ETH balance from provider: ${ethers.utils.formatEther(userBalance)} ETH`);
+      } catch (balanceError) {
+        console.error("Error fetching initial ETH balance:", balanceError);
+      }
         
         // Get Network
         const chainId = await getChainId();
@@ -162,33 +169,11 @@ export function useWallet() {
     // Check if on the correct network
     if (decimalChainId !== CHAIN_CONFIG.chainId) {
       setNetworkWarning(true);
-      addNotification('warning', `Network Warning: You are connected to network ${decimalChainId}, but contracts are deployed on ${CHAIN_CONFIG.chainId}.`, false);
+      addNotification('warning', `Network Warning: You are connected to network ${decimalChainId}, but contracts are deployed on ${CHAIN_CONFIG.chainId} (Hardhat).`, false);
       
-      // Prompt user to switch networks
-      try {
-        const switched = await switchToHardhatNetwork();
-        if (switched) {
-          // Get the new chain ID after switching
-          const newChainId = await getChainId();
-          setChainId(newChainId.toString());
-          addNotification('success', 'Successfully connected to Hardhat network');
-          
-          // Initialize provider and signer with the new network
-          const web3Provider = new ethers.providers.Web3Provider(window.ethereum);
-          setProvider(web3Provider);
-          setSigner(web3Provider.getSigner());
-          
-          // No need to reload the page, just update the state
-          setNetworkWarning(false);
-        }
-      } catch (error) {
-        const switchError = error as { message?: string };
-        console.error("Error switching networks:", switchError);
-        addNotification('error', `Failed to switch networks: ${switchError.message || 'Unknown error'}`, false);
-      }
+      // Don't automatically prompt user to switch - let them decide to click the button
     } else {
       setNetworkWarning(false);
-      addNotification('success', 'Connected to the correct network.');
       
       // Initialize provider and signer with the current network
       const web3Provider = new ethers.providers.Web3Provider(window.ethereum);

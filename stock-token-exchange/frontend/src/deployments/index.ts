@@ -1,5 +1,5 @@
 // This file is auto-generated from contract deployment information
-// Generated on: 2025-05-06T07:52:14.467Z
+// Generated on: 2025-05-08T06:24:30.799Z
 
 // Contract addresses
 export const EXCHANGE_ADDRESS = "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512";
@@ -407,6 +407,19 @@ export const EXCHANGE_ABI = [
         "internalType": "struct Exchange.Order",
         "name": "",
         "type": "tuple"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "getOrderCount",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
       }
     ],
     "stateMutability": "view",

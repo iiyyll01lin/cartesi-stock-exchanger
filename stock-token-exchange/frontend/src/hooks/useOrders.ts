@@ -4,7 +4,7 @@ import { ethers } from 'ethers';
 import { Order, OrderFilterType } from '../types';
 import { getOrders } from '../services/blockchain';
 import { placeOrder, cancelOrder } from '../services/contracts';
-import { submitOrderToApi, cancelOrderViaApi } from '../services/api';
+import { submitOrderToApi, cancelOrderViaApi, fetchOrdersFromApi } from '../services/api';
 import { useNotifications } from './useNotifications';
 import { validateAmount, validatePrice } from '../utils/validation';
 
@@ -30,21 +30,101 @@ export function useOrders(
     
     try {
       setIsLoading(true);
-      const fetchedOrders = await getOrders(exchangeContract, account);
-      setOrders(fetchedOrders);
+      console.log("Fetching orders for token:", tokenAddress);
       
-      if (fetchedOrders.length > 0) {
-        addNotification('success', `Found ${fetchedOrders.length} orders`);
-      } else {
-        addNotification('info', 'No orders found');
+      let blockchainOrders: Order[] = [];
+      let apiOrders: Order[] = [];
+      
+      // Try to get blockchain orders first
+      if (exchangeContract) {
+        try {
+          // Try to get blockchain orders with proper error handling
+          blockchainOrders = await getOrders(exchangeContract);
+          console.log(`Fetched ${blockchainOrders.length} orders from blockchain`);
+        } catch (blockchainError) {
+          console.error("Error fetching blockchain orders:", blockchainError);
+          
+          // Don't show error notification for blockchain fetch issues
+          // as they are common during network switching
+          console.log("Silently handling blockchain fetch error");
+        }
       }
-    } catch (error: any) {
-      console.error("Error fetching orders:", error);
-      addNotification('error', `Failed to fetch orders: ${error.message}`);
+      
+      // Always try to get API orders as backup
+      try {
+        apiOrders = await fetchOrdersFromApi();
+        console.log(`Fetched ${apiOrders.length} orders from API`);
+      } catch (apiError) {
+        console.error("Error fetching API orders:", apiError);
+        
+        // Only show error if we couldn't get blockchain orders either
+        if (blockchainOrders.length === 0) {
+          addNotification('error', 'Unable to fetch orders. Please check your connection.');
+        }
+      }
+      
+      // Combine and deduplicate orders from both sources
+      // In case of duplicates, prefer blockchain orders
+      const combinedOrders = mergeOrders(blockchainOrders, apiOrders);
+      
+      console.log(`Fetched ${combinedOrders.length} orders:`, combinedOrders);
+      setOrders(combinedOrders);
+    } catch (error) {
+      console.error("Error in fetchOrders:", error);
+      // Only show this error notification for truly unexpected errors
+      addNotification('error', 'Unexpected error fetching orders');
     } finally {
       setIsLoading(false);
     }
-  }, [exchangeContract, account, tokenAddress, addNotification]);
+  }, [tokenAddress, exchangeContract, addNotification]);
+  
+  // Check for order count and latest order - useful for debugging
+  const checkOrderInfo = useCallback(async () => {
+    if (!exchangeContract) return;
+    
+    try {
+      // First check if the contract is ready by checking a simple property
+      try {
+        // Use a simpler call like address instead of a function call
+        const contractAddress = await exchangeContract.address;
+        console.log("Contract is accessible at address:", contractAddress);
+      } catch (accessError) {
+        console.error("Contract may not be fully initialized:", accessError);
+        return; // Exit early if contract isn't ready
+      }
+      
+      // Check if the contract has a getOrderCount function
+      if (exchangeContract.getOrderCount && typeof exchangeContract.getOrderCount === 'function') {
+        try {
+          const orderCount = await exchangeContract.getOrderCount();
+          console.log("Order count in contract:", orderCount.toString());
+          
+          // Try to fetch the latest order for debugging
+          if (orderCount > 0) {
+            try {
+              const latestOrder = await exchangeContract.getOrder(orderCount);
+              console.log("Latest order in contract:", {
+                id: orderCount.toString(),
+                user: latestOrder.user,
+                amount: ethers.utils.formatEther(latestOrder.amount),
+                price: ethers.utils.formatEther(latestOrder.price),
+                active: latestOrder.active,
+                isBuyOrder: latestOrder.isBuyOrder
+              });
+            } catch (e) {
+              console.error("Error fetching latest order:", e);
+            }
+          }
+        } catch (e) {
+          console.error("Error checking contract order count:", e);
+        }
+      } else {
+        console.warn("Exchange contract does not have getOrderCount method - this is expected if you're using a version without this view function");
+      }
+    } catch (error) {
+      console.error("Error in checkOrderInfo:", error);
+    }
+  }, [exchangeContract]);
   
   // Filter orders
   const getFilteredOrders = useCallback(() => {
@@ -121,6 +201,40 @@ export function useOrders(
       return;
     }
     
+    // Pre-check for sufficient ETH balance for buy orders
+    if (isBuyOrder && exchangeContract) {
+      try {
+        const amount = parseFloat(orderAmount);
+        const price = parseFloat(orderPrice);
+        const totalCost = amount * price;
+        
+        // Get current ETH balance in the exchange
+        const balance = await exchangeContract.ethDeposits(account);
+        const balanceInEth = parseFloat(ethers.utils.formatEther(balance));
+        
+        console.log("ETH Balance Check for Buy Order:", {
+          userAddress: account,
+          requiredETH: totalCost,
+          actualBalanceWei: balance.toString(),
+          actualBalanceETH: balanceInEth,
+          tokenAmount: amount,
+          pricePerToken: price,
+          hasEnoughBalance: balanceInEth >= totalCost
+        });
+        
+        // Add a small safety margin (0.5%) to account for potential rounding issues
+        const safetyMargin = totalCost * 0.005;
+        if (balanceInEth < (totalCost + safetyMargin)) {
+          const errorMsg = `Insufficient ETH in your exchange balance. You need ${totalCost.toFixed(4)} ETH but only have ${balanceInEth.toFixed(4)} ETH. Please deposit slightly more ETH than required to account for potential rounding issues.`;
+          addNotification('error', errorMsg);
+          return;
+        }
+      } catch (error) {
+        console.error("Error checking ETH balance:", error);
+        // Continue with the transaction attempt even if balance check fails
+      }
+    }
+    
     setIsLoading(true);
     
     try {
@@ -147,8 +261,11 @@ export function useOrders(
         setOrderAmountError(null);
         setOrderPriceError(null);
         
-        // Refresh orders
-        await fetchOrders();
+        // Refresh orders - add a small delay to ensure blockchain events are processed
+        setTimeout(async () => {
+          console.log("Refreshing orders after successful transaction");
+          await fetchOrders();
+        }, 2000); // 2 second delay
       } else {
         // Fallback to API
         addNotification('warning', 'No blockchain connection. Using API fallback...');
@@ -163,7 +280,23 @@ export function useOrders(
         return;
       }
       
-      addNotification('error', `Failed to place order: ${error.message}`);
+      // Parse error message for common issues and make it more user-friendly
+      let errorMessage = error.message;
+      
+      // Check for "Insufficient ETH for buy order" error
+      if (error.message && error.message.includes('Insufficient ETH for buy order')) {
+        errorMessage = 'You do not have enough ETH in your exchange balance. Please deposit more ETH before placing this buy order.';
+      } 
+      // Unpredictable gas limit errors often happen with failed transactions
+      else if (error.message && error.message.includes('UNPREDICTABLE_GAS_LIMIT')) {
+        if (error.message.includes('Insufficient ETH for buy order')) {
+          errorMessage = 'You do not have enough ETH in your exchange balance. Please deposit more ETH before placing this buy order.';
+        } else {
+          errorMessage = 'Transaction failed. There may be an issue with the contract or your inputs.';
+        }
+      }
+      
+      addNotification('error', `Failed to place order: ${errorMessage}`);
       
       // Try fallback
       try {
@@ -244,6 +377,13 @@ export function useOrders(
     }
   }, [account, exchangeContract, fetchOrders]);
   
+  // Debug: Check order info when contracts are loaded
+  useEffect(() => {
+    if (exchangeContract) {
+      checkOrderInfo();
+    }
+  }, [exchangeContract, checkOrderInfo]);
+  
   return {
     orders,
     filteredOrders: getFilteredOrders(),
@@ -262,6 +402,26 @@ export function useOrders(
     orderPriceError,
     handlePlaceOrder,
     handleCancelOrder,
-    fetchOrders
+    fetchOrders,
+    checkOrderInfo
   };
+}
+
+/**
+ * Helper function to merge and deduplicate orders from multiple sources
+ */
+function mergeOrders(blockchainOrders: Order[], apiOrders: Order[]): Order[] {
+  // Create a map of blockchain orders by ID for fast lookup
+  const blockchainOrderMap = new Map<number, Order>();
+  blockchainOrders.forEach(order => {
+    blockchainOrderMap.set(order.id, order);
+  });
+  
+  // Add API orders that aren't already in blockchain orders
+  const uniqueApiOrders = apiOrders.filter(apiOrder => 
+    !blockchainOrderMap.has(apiOrder.id)
+  );
+  
+  // Combine all orders
+  return [...blockchainOrders, ...uniqueApiOrders];
 }

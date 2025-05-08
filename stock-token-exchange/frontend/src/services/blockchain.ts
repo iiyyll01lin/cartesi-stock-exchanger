@@ -57,15 +57,22 @@ export async function checkConnections(provider: ethers.providers.Web3Provider |
  */
 export async function getOrders(
   exchangeContract: ethers.Contract | null,
-  account: string | null
+  account?: string | null
 ): Promise<Order[]> {
   // First try to fetch from the blockchain
-  if (exchangeContract && account) {
+  if (exchangeContract) {
     try {
-      return await fetchBlockchainOrders(exchangeContract);
+      // Add a timeout to prevent hanging if the blockchain request takes too long
+      return await Promise.race([
+        fetchBlockchainOrders(exchangeContract),
+        new Promise<Order[]>((_, reject) => 
+          setTimeout(() => reject(new Error("Blockchain fetch timeout")), 8000)
+        )
+      ]) as Order[];
     } catch (error) {
       console.error("Error fetching blockchain orders:", error);
-      // Fall back to API
+      // No need to show the error to the user - we'll fall back to API silently
+      throw error; // Re-throw the error so caller can handle the fallback
     }
   }
   

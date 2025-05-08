@@ -10,6 +10,7 @@ interface WalletInfoProps {
   tokenBalance: string;
   tokenSymbol: string;
   isLoading: boolean;
+  exchangeEthBalance?: string; // Added exchange ETH balance
   connectWallet?: () => Promise<void>;
 }
 
@@ -19,12 +20,14 @@ const WalletInfo: React.FC<WalletInfoProps> = ({
   ethBalance,
   tokenBalance,
   tokenSymbol,
-  isLoading
+  isLoading,
+  exchangeEthBalance = "0" // Default to 0 if not provided
 }) => {
   const { connectWallet, forceReconnect } = useWalletContext();
   const [isReconnecting, setIsReconnecting] = useState(false);
   const isCorrectNetwork = chainId && parseInt(chainId) === CHAIN_CONFIG.chainId;
-  
+  const displayChainId = isLoading ? "Loading..." : (chainId || "Unknown");
+
   const handleForceReconnect = async () => {
     setIsReconnecting(true);
     try {
@@ -47,10 +50,10 @@ const WalletInfo: React.FC<WalletInfoProps> = ({
     <div className="wallet-info">
       <div className="wallet-status-indicator">
         <div className={`status-dot ${account ? (isCorrectNetwork ? 'connected' : 'wrong-network') : 'disconnected'}`}></div>
-        <span>{account 
-          ? (isCorrectNetwork 
-            ? 'Connected to Hardhat Network' 
-            : 'Wrong Network (Switch to Hardhat)') 
+        <span>{account
+          ? (isCorrectNetwork
+            ? 'Connected to Hardhat Network'
+            : `Wrong Network (Switch to Hardhat)`)
           : 'Wallet Disconnected'}
         </span>
       </div>
@@ -58,14 +61,19 @@ const WalletInfo: React.FC<WalletInfoProps> = ({
         <strong>Account:</strong> {account ? formatAddress(account) : 'Not connected'}
       </div>
       <div>
-        <strong>Chain ID:</strong> {chainId 
-          ? (isCorrectNetwork 
-            ? <span className="correct-network">{chainId} ✓</span> 
-            : <span className="wrong-network">{chainId} ⚠️</span>) 
-          : 'Unknown'}
+        <strong>Chain ID:</strong> {displayChainId === "Loading..."
+          ? displayChainId
+          : chainId
+            ? (isCorrectNetwork
+              ? <span className="correct-network">{displayChainId} ✓</span>
+              : <span className="wrong-network">{displayChainId} ⚠️</span>)
+            : 'Unknown'}
       </div>
       <div>
         <strong>ETH Balance:</strong> {parseFloat(ethBalance || "0").toFixed(4)} ETH
+      </div>
+      <div>
+        <strong>Exchange ETH:</strong> {parseFloat(exchangeEthBalance || "0").toFixed(4)} ETH
       </div>
       <div>
         <strong>Token Balance:</strong> {parseFloat(tokenBalance || "0").toFixed(4)} {tokenSymbol}

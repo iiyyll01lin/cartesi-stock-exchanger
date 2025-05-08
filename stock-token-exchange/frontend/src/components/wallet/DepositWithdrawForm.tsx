@@ -10,6 +10,7 @@ interface DepositWithdrawFormProps {
   isWithdrawing: boolean;
   exchangeEthBalance: string;
   exchangeTokenBalance: string;
+  isConnectedToCorrectNetwork?: boolean;
 }
 
 const DepositWithdrawForm: React.FC<DepositWithdrawFormProps> = ({
@@ -21,7 +22,8 @@ const DepositWithdrawForm: React.FC<DepositWithdrawFormProps> = ({
   isDepositing,
   isWithdrawing,
   exchangeEthBalance,
-  exchangeTokenBalance
+  exchangeTokenBalance,
+  isConnectedToCorrectNetwork = true
 }) => {
   const [ethDepositAmount, setEthDepositAmount] = useState<string>('');
   const [ethWithdrawAmount, setEthWithdrawAmount] = useState<string>('');
@@ -74,6 +76,14 @@ const DepositWithdrawForm: React.FC<DepositWithdrawFormProps> = ({
           <h3>ETH</h3>
           <div className="balance-info">
             <strong>Exchange Balance:</strong> {parseFloat(exchangeEthBalance).toFixed(4)} ETH
+            {!isConnectedToCorrectNetwork && (
+              <div className="warning-message">
+                * This balance may be outdated. Connect to Hardhat Network to see accurate balances.
+              </div>
+            )}
+            <div className="helper-note">
+              <small>* ETH must be deposited to the exchange before placing buy orders. The cost of a buy order will be deducted from your exchange balance.</small>
+            </div>
           </div>
           <div className="action-row">
             <div className="input-group">
@@ -126,6 +136,11 @@ const DepositWithdrawForm: React.FC<DepositWithdrawFormProps> = ({
           <h3>{tokenSymbol}</h3>
           <div className="balance-info">
             <strong>Exchange Balance:</strong> {parseFloat(exchangeTokenBalance).toFixed(4)} {tokenSymbol}
+            {!isConnectedToCorrectNetwork && (
+              <div className="warning-message">
+                * This balance may be outdated. Connect to Hardhat Network to see accurate balances.
+              </div>
+            )}
           </div>
           <div className="action-row">
             <div className="input-group">
