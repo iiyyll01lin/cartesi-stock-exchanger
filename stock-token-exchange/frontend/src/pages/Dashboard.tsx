@@ -17,7 +17,6 @@ const Dashboard: React.FC = () => {
   const { exchangeContract, stockTokenContract, tokenSymbol, tokenAddress } = useContractContext();
   const { addNotification } = useNotificationContext();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [message] = useState<string>('Connect your wallet to start trading.');
   const { isConnected, isContractsLoaded, hasSigner, signedMessage } = useWalletStatus();
   
   // Log wallet status on changes
@@ -104,7 +103,7 @@ const Dashboard: React.FC = () => {
   return (
     <>
       {/* Hot reload indicator - if you see this text, hot reloading is working */}
-      <div style={{ background: '#f0f9ff', color: 'blue', padding: '5px', textAlign: 'center' }}>
+      <div className="hot-reload-indicator">
         Hot Reload Verification - {new Date().toLocaleTimeString()}
       </div>
       
@@ -115,13 +114,16 @@ const Dashboard: React.FC = () => {
         tokenBalance={tokenBalance}
         tokenSymbol={tokenSymbol}
         exchangeEthBalance={exchangeEthBalance}
+        exchangeTokenBalance={exchangeTokenBalance}
         isLoading={isLoading}
         onNetworkSwitch={fetchUserBalances} // Add this prop
       />
       
-      <div className="message" style={{ color: errorMessage ? 'red' : 'inherit' }}>
-        {message}
-      </div>
+      {/* {account ? null : (
+        <div className="message">
+          Connect your wallet to start trading.
+        </div>
+      )} */}
       
       {networkWarning && (
         <div className="network-warning">
@@ -172,8 +174,11 @@ const Dashboard: React.FC = () => {
       </div>
       
       {/* Show connection error message if applicable */}
-      {(errorMessage || networkWarning || !account) && (
-        <ConnectionErrorMessage checkConnections={checkConnections} />
+      {errorMessage && (
+        <ConnectionErrorMessage 
+          checkConnections={checkConnections} 
+          errorMessage={errorMessage}
+        />
       )}
     </>
   );

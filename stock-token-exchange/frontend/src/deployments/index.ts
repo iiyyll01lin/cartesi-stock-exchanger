@@ -1,5 +1,5 @@
 // This file is auto-generated from contract deployment information
-// Generated on: 2025-05-09T07:06:22.156Z
+// Generated on: 2025-05-09T10:59:07.216Z
 
 // Contract addresses
 export const EXCHANGE_ADDRESS = "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512";

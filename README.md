@@ -6,6 +6,10 @@ This project implements a decentralized stock token exchange leveraging Cartesi 
 
 The exchange allows users to deposit ETH and specific stock tokens (like AAPL, represented as ERC20) into a smart contract. Buy and sell orders are placed on-chain, locking the necessary funds. The complex task of matching these orders is delegated to a Cartesi Machine, which runs a Python script (`offchain_logic.py`) implementing a price-time priority matching algorithm. Once the Cartesi computation is complete and finalized, an authorized admin triggers an on-chain function to process the results, updating user balances and order statuses according to the matched trades verified by Cartesi Compute.
 
+## Frontend Design
+
+![frontend design](./frontend-design.png)
+
 ## Project Structure
 
 ### High-Level Architecture

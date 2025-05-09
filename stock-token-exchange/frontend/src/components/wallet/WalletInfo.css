@@ -1,0 +1,118 @@
+/* Styles for WalletInfo component balance display */
+
+/* Ensure two balance blocks are displayed side-by-side on large screens */
+@media (min-width: 992px) {
+  .wallet-info {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+  
+  .connection-section {
+    grid-column: 1 / 3;
+  }
+  
+  .balance-section {
+    grid-column: 1 / 2;
+  }
+  
+  .exchange-section {
+    grid-column: 2 / 3;
+  }
+  
+  .action-section {
+    grid-column: 1 / 3;
+  }
+}
+
+/* Unified styles for balance labels and values */
+.balance-row {
+  padding: 12px 15px;
+  display: flex;
+  justify-content: space-between; /* Default alignment, will be overridden by more specific rules below */
+  align-items: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.balance-row:last-child {
+  border-bottom: none;
+}
+
+.info-label {
+  font-weight: 500;
+  color: var(--secondary-color);
+  /* margin-right will be specified in section-specific rules */
+}
+
+.balance-amount {
+  font-weight: 600;
+  margin-right: 5px;
+}
+
+.balance-unit {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.9em;
+}
+
+/* Ensure balance sections have the same height */
+.wallet-section.balance-section {
+  text-align: center;
+  padding-left: 0; /* As per original .section-title padding: 12px 0 */
+  padding-right: 0; /* As per original .section-title padding: 12px 0 */
+}
+
+
+.wallet-section.exchange-section {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.wallet-details {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Section title styling */
+.section-title {
+  /* Common styles for section titles */
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-top: 12px;
+  padding-bottom: 12px;
+  /* text-align is now handled by more specific rules below */
+}
+
+/* Align title in Wallet Balances section to the center */
+.balance-section .section-title {
+  text-align: center;
+  padding-left: 15px; /* Align with balance-row's content padding */
+  padding-right: 15px; /* Consistent horizontal padding */
+}
+
+/* Align title in Exchange Balances section (e.g., right column) to the center */
+.exchange-section .section-title {
+  text-align: center;
+  padding-left: 0; /* As per original .section-title padding: 12px 0 */
+  padding-right: 0; /* As per original .section-title padding: 12px 0 */
+}
+
+/* Specific alignment for items in Wallet Balances section */
+.balance-section .balance-row {
+  justify-content: flex-start; /* Align content (label + value group) to the left */
+}
+
+/* Add some space between label and value in Wallet Balances items */
+.balance-section .balance-row .info-label {
+  margin-right: 8px; /* Adjust as needed for visual spacing */
+}
+
+/* Specific alignment for items in Exchange Balances section */
+.exchange-section .balance-row {
+  justify-content: flex-start; /* Align content (label + value group) to the left */
+}
+
+/* Add some space between label and value in Exchange Balances items */
+.exchange-section .balance-row .info-label {
+  margin-right: 8px; /* Adjust as needed for visual spacing */
+}

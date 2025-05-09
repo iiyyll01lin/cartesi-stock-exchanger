@@ -12,33 +12,45 @@ const OrderItem: React.FC<OrderItemProps> = ({ order, account, onCancel }) => {
   const isUserOrder = account && order.user.toLowerCase() === account.toLowerCase();
   
   return (
-    <div className={`order-item ${order.isBuyOrder ? 'buy' : 'sell'}`}>
-      <div>
-        <strong>Order ID:</strong> {order.id}
+    <div className={`order-item ${order.isBuyOrder ? 'buy-order' : 'sell-order'} ${isUserOrder ? 'your-order' : ''}`}>
+      <div className="order-cell order-id">
+        <span>{order.id}</span>
       </div>
-      <div>
-        <strong>User:</strong> {formatAddress(order.user)}
-        {isUserOrder && <span className="your-order"> (You)</span>}
+      
+      <div className="order-cell order-user">
+        <span title={order.user}>{formatAddress(order.user)}</span>
+        {isUserOrder && <span className="user-badge">You</span>}
       </div>
-      <div>
-        <strong>Token:</strong> {formatAddress(order.token)}
+      
+      <div className="order-cell order-token">
+        <span title={order.token}>{formatAddress(order.token)}</span>
       </div>
-      <div>
-        <strong>Amount:</strong> {order.amount}
+      
+      <div className="order-cell order-amount">
+        <span>{order.amount}</span>
       </div>
-      <div>
-        <strong>Price:</strong> {order.price}
+      
+      <div className="order-cell order-price">
+        <span>{order.price}</span>
       </div>
-      <div>
-        <strong>Status:</strong> {order.active ? 'Active' : 'Inactive'}
+      
+      <div className="order-cell order-status">
+        <span className={`status-badge ${order.active ? 'active' : 'inactive'}`}>
+          {order.active ? 'Active' : 'Inactive'}
+        </span>
       </div>
-      {isUserOrder && order.active && (
-        <div className="order-actions">
-          <button onClick={() => onCancel(order.id)}>
-            Cancel Order
+      
+      <div className="order-cell order-actions">
+        {isUserOrder && order.active && (
+          <button 
+            onClick={() => onCancel(order.id)}
+            className="cancel-button"
+            title="Cancel this order"
+          >
+            Cancel
           </button>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 };

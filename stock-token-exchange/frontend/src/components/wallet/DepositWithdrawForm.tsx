@@ -69,124 +69,164 @@ const DepositWithdrawForm: React.FC<DepositWithdrawFormProps> = ({
   };
 
   return (
-    <div className="section">
-      <h2>Deposit & Withdraw</h2>
-      <div className="deposit-withdraw-form">
-        <div className="form-section">
-          <h3>ETH</h3>
-          <div className="balance-info">
-            <strong>Exchange Balance:</strong> {parseFloat(exchangeEthBalance).toFixed(4)} ETH
-            {!isConnectedToCorrectNetwork && (
-              <div className="warning-message">
-                * This balance may be outdated. Connect to Hardhat Network to see accurate balances.
+    <div className="trade-section deposit-withdraw-section">
+      <div className="section-header">
+        <h2>Deposit & Withdraw</h2>
+      </div>
+      
+      <div className="section-content">
+        {/* ETH Section */}
+        <div className="asset-section eth-section">
+          <div className="asset-header">
+            <h3 className="asset-title">ETH</h3>
+            <div className="asset-balance">
+              <div className="balance-display">
+                <span className="balance-label">Exchange Balance:</span>
+                <span className="balance-value">{parseFloat(exchangeEthBalance).toFixed(4)} ETH</span>
               </div>
-            )}
+              {!isConnectedToCorrectNetwork && (
+                <div className="warning-message">
+                  * This balance may be outdated. Connect to Hardhat Network to see accurate balances.
+                </div>
+              )}
+            </div>
             <div className="helper-note">
-              <small>* ETH must be deposited to the exchange before placing buy orders. The cost of a buy order will be deducted from your exchange balance.</small>
+              * ETH must be deposited to the exchange before placing buy orders. The cost of a buy order will be deducted from your exchange balance.
             </div>
           </div>
-          <div className="action-row">
-            <div className="input-group">
-              <input
-                type="number"
-                value={ethDepositAmount}
-                onChange={(e) => setEthDepositAmount(e.target.value)}
-                placeholder="Amount"
-                min="0"
-                step="0.01"
-              />
-              <button 
-                onClick={handleDepositETH} 
-                disabled={isDepositing || !ethDepositAmount || parseFloat(ethDepositAmount) <= 0}
-                className="primary-button"
-                title="Deposit ETH to the exchange contract"
-              >
-                {isDepositing ? 'Depositing...' : 'Deposit ETH'}
-              </button>
+          
+          <div className="asset-actions">
+            <div className="action-container deposit-container">
+              <div className="action-label">Deposit ETH</div>
+              <div className="improved-input-group">
+                <div className="input-with-max">
+                  <input
+                    type="number"
+                    value={ethDepositAmount}
+                    onChange={(e) => setEthDepositAmount(e.target.value)}
+                    placeholder="Enter amount to deposit"
+                    min="0"
+                    step="0.01"
+                    className="wide-input"
+                  />
+                </div>
+                <button 
+                  onClick={handleDepositETH} 
+                  disabled={isDepositing || !ethDepositAmount || parseFloat(ethDepositAmount) <= 0}
+                  className="action-button deposit-button"
+                >
+                  {isDepositing ? 'Depositing...' : 'Deposit'}
+                </button>
+              </div>
             </div>
-          </div>
-          <div className="action-row">
-            <div className="input-group">
-              <input
-                type="number"
-                value={ethWithdrawAmount}
-                onChange={(e) => setEthWithdrawAmount(e.target.value)}
-                placeholder="Amount"
-                min="0"
-                step="0.01"
-              />
-              <button 
-                onClick={maxEthWithdraw} 
-                className="secondary-button"
-              >
-                Max
-              </button>
-              <button 
-                onClick={handleWithdrawETH} 
-                disabled={isWithdrawing || !ethWithdrawAmount || parseFloat(ethWithdrawAmount) <= 0}
-                className="primary-button"
-              >
-                {isWithdrawing ? 'Withdrawing...' : 'Withdraw ETH'}
-              </button>
+            
+            <div className="action-container withdraw-container">
+              <div className="action-label">Withdraw ETH</div>
+              <div className="improved-input-group">
+                <div className="input-with-max">
+                  <input
+                    type="number"
+                    value={ethWithdrawAmount}
+                    onChange={(e) => setEthWithdrawAmount(e.target.value)}
+                    placeholder="Enter amount to withdraw"
+                    min="0"
+                    step="0.01"
+                    className="wide-input"
+                  />
+                  <button 
+                    onClick={maxEthWithdraw} 
+                    className="max-button"
+                    title="Use maximum available balance"
+                  >
+                    Max
+                  </button>
+                </div>
+                <button 
+                  onClick={handleWithdrawETH} 
+                  disabled={isWithdrawing || !ethWithdrawAmount || parseFloat(ethWithdrawAmount) <= 0}
+                  className="action-button withdraw-button"
+                >
+                  {isWithdrawing ? 'Withdrawing...' : 'Withdraw'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
-
-        <div className="form-section">
-          <h3>{tokenSymbol}</h3>
-          <div className="balance-info">
-            <strong>Exchange Balance:</strong> {parseFloat(exchangeTokenBalance || '0').toFixed(4)} {tokenSymbol}
-            {!isConnectedToCorrectNetwork && (
-              <div className="warning-message">
-                * This balance may be outdated. Connect to Hardhat Network to see accurate balances.
+        
+        {/* Token Section */}
+        <div className="asset-section token-section">
+          <div className="asset-header">
+            <h3 className="asset-title">{tokenSymbol}</h3>
+            <div className="asset-balance">
+              <div className="balance-display">
+                <span className="balance-label">Exchange Balance:</span>
+                <span className="balance-value">{parseFloat(exchangeTokenBalance || '0').toFixed(4)} {tokenSymbol}</span>
               </div>
-            )}
+              {!isConnectedToCorrectNetwork && (
+                <div className="warning-message">
+                  * This balance may be outdated. Connect to Hardhat Network to see accurate balances.
+                </div>
+              )}
+            </div>
             <div className="helper-note">
-              <small>* Tokens must be deposited to the exchange before placing sell orders or they won't appear in your Exchange Balance.</small>
+              * Tokens must be deposited to the exchange before placing sell orders or they won't appear in your Exchange Balance.
             </div>
           </div>
-          <div className="action-row">
-            <div className="input-group">
-              <input
-                type="number"
-                value={tokenDepositAmount}
-                onChange={(e) => setTokenDepositAmount(e.target.value)}
-                placeholder="Amount"
-                min="0"
-                step="1"
-              />
-              <button 
-                onClick={handleDepositToken} 
-                disabled={isDepositing || !tokenDepositAmount || parseFloat(tokenDepositAmount) <= 0}
-                className="primary-button"
-              >
-                {isDepositing ? 'Depositing...' : `Deposit ${tokenSymbol}`}
-              </button>
+          
+          <div className="asset-actions">
+            <div className="action-container deposit-container">
+              <div className="action-label">Deposit {tokenSymbol}</div>
+              <div className="improved-input-group">
+                <div className="input-with-max">
+                  <input
+                    type="number"
+                    value={tokenDepositAmount}
+                    onChange={(e) => setTokenDepositAmount(e.target.value)}
+                    placeholder="Enter amount to deposit"
+                    min="0"
+                    step="1"
+                    className="wide-input"
+                  />
+                </div>
+                <button 
+                  onClick={handleDepositToken} 
+                  disabled={isDepositing || !tokenDepositAmount || parseFloat(tokenDepositAmount) <= 0}
+                  className="action-button deposit-button"
+                >
+                  {isDepositing ? 'Depositing...' : 'Deposit'}
+                </button>
+              </div>
             </div>
-          </div>
-          <div className="action-row">
-            <div className="input-group">
-              <input
-                type="number"
-                value={tokenWithdrawAmount}
-                onChange={(e) => setTokenWithdrawAmount(e.target.value)}
-                placeholder="Amount"
-                min="0"
-                step="1"
-              />
-              <button 
-                onClick={maxTokenWithdraw} 
-                className="secondary-button"
-              >
-                Max
-              </button>
-              <button 
-                onClick={handleWithdrawToken} 
-                disabled={isWithdrawing || !tokenWithdrawAmount || parseFloat(tokenWithdrawAmount) <= 0}
-                className="primary-button"
-              >
-                {isWithdrawing ? 'Withdrawing...' : `Withdraw ${tokenSymbol}`}
-              </button>
+            
+            <div className="action-container withdraw-container">
+              <div className="action-label">Withdraw {tokenSymbol}</div>
+              <div className="improved-input-group">
+                <div className="input-with-max">
+                  <input
+                    type="number"
+                    value={tokenWithdrawAmount}
+                    onChange={(e) => setTokenWithdrawAmount(e.target.value)}
+                    placeholder="Enter amount to withdraw"
+                    min="0"
+                    step="1"
+                    className="wide-input"
+                  />
+                  <button 
+                    onClick={maxTokenWithdraw} 
+                    className="max-button"
+                    title="Use maximum available balance"
+                  >
+                    Max
+                  </button>
+                </div>
+                <button 
+                  onClick={handleWithdrawToken} 
+                  disabled={isWithdrawing || !tokenWithdrawAmount || parseFloat(tokenWithdrawAmount) <= 0}
+                  className="action-button withdraw-button"
+                >
+                  {isWithdrawing ? 'Withdrawing...' : 'Withdraw'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

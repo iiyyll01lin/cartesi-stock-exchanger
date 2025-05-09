@@ -24,31 +24,50 @@ const OrderList: React.FC<OrderListProps> = ({
   onCancelOrder
 }) => {
   return (
-    <div className="section">
-      <h2>Order Book</h2>
-      <OrderFilters
-        orderFilter={orderFilter}
-        setOrderFilter={setOrderFilter}
-        showMyOrdersOnly={showMyOrdersOnly}
-        setShowMyOrdersOnly={setShowMyOrdersOnly}
-      />
+    <div className="trade-section order-book-section">
+      <div className="section-header">
+        <h2>Order Book</h2>
+      </div>
       
-      {orders.length === 0 ? (
-        <div className="no-orders">
-          No orders found. Create a new order below.
+      <div className="section-content">
+        <div className="filter-container">
+          <OrderFilters
+            orderFilter={orderFilter}
+            setOrderFilter={setOrderFilter}
+            showMyOrdersOnly={showMyOrdersOnly}
+            setShowMyOrdersOnly={setShowMyOrdersOnly}
+          />
         </div>
-      ) : (
-        <div className="order-list">
-          {orders.map(order => (
-            <OrderItem
-              key={order.id}
-              order={order}
-              account={account}
-              onCancel={onCancelOrder}
-            />
-          ))}
-        </div>
-      )}
+        
+        {orders.length === 0 ? (
+          <div className="no-orders">
+            <div className="empty-state">
+              <i className="icon-empty"></i>
+              <p>No orders found. Create a new order below.</p>
+            </div>
+          </div>
+        ) : (
+          <div className="order-list">
+            <div className="order-header">
+              <div className="order-header-item">Order ID</div>
+              <div className="order-header-item">User</div>
+              <div className="order-header-item">Token</div>
+              <div className="order-header-item">Amount</div>
+              <div className="order-header-item">Price</div>
+              <div className="order-header-item">Status</div>
+              <div className="order-header-item">Actions</div>
+            </div>
+            {orders.map(order => (
+              <OrderItem
+                key={order.id}
+                order={order}
+                account={account}
+                onCancel={onCancelOrder}
+              />
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 };
