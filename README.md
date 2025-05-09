@@ -22,7 +22,7 @@ The exchange allows users to deposit ETH and specific stock tokens (like AAPL, r
 
 ## Key Components
 
-* **Docker (`docker-compose.yml`, `backend/Dockerfile`):** Defines the multi-container environment including a local blockchain, contract deployer, backend API, frontend server, and a Cartesi playground container for building/interacting with the Cartesi machine.
+* **Docker (`docker compose.yml`, `backend/Dockerfile`):** Defines the multi-container environment including a local blockchain, contract deployer, backend API, frontend server, and a Cartesi playground container for building/interacting with the Cartesi machine.
 * **Solidity Contracts (`contracts/`):**
   * `StockToken.sol`: A standard ERC20 token contract (using OpenZeppelin) representing a tradable stock (e.g., AAPL). Includes an `Ownable` `mint` function.
   * `Exchange.sol`: The core contract managing deposits/withdrawals (ETH & Tokens), order placement (`placeOrder`) and cancellation (`cancelOrder`) which lock/refund funds respectively, unique order ID generation, and interaction with the Cartesi Compute SDK to trigger (`triggerOrderMatching`) and process (`processMatchResult`) off-chain order matching. Contains placeholders for Cartesi input data construction and result decoding/processing.
@@ -483,7 +483,7 @@ This project uses Docker Compose to simplify setup and running all components.
     ```
 
 3. **Build & Start Services:**
-    This command builds the necessary Docker images (like the backend) and starts all services defined in `docker-compose.yml` in detached mode.
+    This command builds the necessary Docker images (like the backend) and starts all services defined in `docker compose.yml` in detached mode.
 
     ```bash
     docker compose up --build -d
@@ -528,7 +528,7 @@ This project uses Docker Compose to simplify setup and running all components.
 1. **Access the Cartesi Container:**
 
     ```bash
-    docker-compose exec cartesi bash
+    docker compose exec cartesi bash
     ```
 
 2. **Navigate and Build:**
@@ -545,14 +545,14 @@ This project uses Docker Compose to simplify setup and running all components.
 
 3. **Update Template Hash:**
     * Copy the `templateHash` output by the build script.
-    * Stop the services: `docker-compose down`
+    * Stop the services: `docker compose down`
     * Edit `stock-token-exchange/deploy/01_deploy_contracts.ts` and replace the placeholder `CARTESI_TEMPLATE_HASH` with the actual hash.
-    * Restart the services: `docker-compose up --build -d` (The deployer should now use the correct hash).
+    * Restart the services: `docker compose up --build -d` (The deployer should now use the correct hash).
 
 ### Stopping Services
 
 ```bash
-docker-compose down
+docker compose down
 ```
 
 This stops and removes the containers, networks, and volumes defined in the compose file.
@@ -806,7 +806,7 @@ The Stock Token Exchange system uses various environment variables to configure 
 
 | Parameter | Description | Default | Used By |
 |-----------|-------------|---------|---------|
-| `COMPOSE_PROJECT_NAME` | Name prefix for Docker containers created by docker-compose | `cartesi-stock-exchange` | Docker Compose |
+| `COMPOSE_PROJECT_NAME` | Name prefix for Docker containers created by docker compose | `cartesi-stock-exchange` | Docker Compose |
 | `BACKEND_PORT` | Port on which the backend API is exposed | `5001` | Docker Compose |
 | `FRONTEND_PORT` | Port on which the frontend web app is exposed | `3000` | Docker Compose |
 | `BLOCKCHAIN_PORT` | Port on which the local Hardhat node is exposed | `8545` | Docker Compose |
@@ -845,7 +845,7 @@ echo "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80" > secr
 chmod 600 secrets/admin_private_key.txt
 
 # Start all services
-docker-compose up --build -d
+docker compose up --build -d
 ```
 
 ### 2. Deploy Contracts
@@ -853,7 +853,7 @@ docker-compose up --build -d
 Contracts are automatically deployed by the `deployer` service when Docker Compose starts. You can check the logs to see the deployment results:
 
 ```bash
-docker-compose logs deployer
+docker compose logs deployer
 ```
 
 Expected output:
@@ -1284,7 +1284,7 @@ The key points illustrated:
 3. **Build and Run:**
 
     ```bash
-    docker-compose up --build -d
+    docker compose up --build -d
     ```
 
     * `--build`: Forces Docker to rebuild images if Dockerfiles or build contexts have changed.
@@ -1298,16 +1298,16 @@ The key points illustrated:
 5. **Stopping the Application:**
 
     ```bash
-    docker-compose down
+    docker compose down
     ```
 
-    * Use `docker-compose down -v` to also remove named volumes (like potential database volumes if added later).
+    * Use `docker compose down -v` to also remove named volumes (like potential database volumes if added later).
 
 **Troubleshooting:**
 
 * **`sed: cannot rename ... Device or resource busy` during deployment:** This warning may appear when running Docker Compose on Windows or macOS due to volume mount interactions. If the `deployer` service completes successfully (exits with code 0) and the contract addresses are updated in the root `.env` file and `frontend/src/deployments/index.ts`, this warning can usually be ignored.
 * **Permissions Error on `admin_private_key.txt`:** Ensure you run `chmod 400 secrets/admin_private_key.txt` on your host machine *before* starting the containers.
-* **Frontend/Backend Connection Issues:** Verify `REACT_APP_BACKEND_URL` in `docker-compose.yml` points to `http://backend:5001`. Check backend logs for errors.
+* **Frontend/Backend Connection Issues:** Verify `REACT_APP_BACKEND_URL` in `docker compose.yml` points to `http://backend:5001`. Check backend logs for errors.
 
 ## Development
 
@@ -1378,13 +1378,13 @@ This will update the ABI files in the `artifacts` directory. Make sure the front
 If you encounter issues with the Docker environment, you can reset it by stopping and removing all containers, networks, and volumes:
 
 ```bash
-docker-compose down -v
+docker compose down -v
 ```
 
 Then, rebuild and start the services:
 
 ```bash
-docker-compose up --build -d
+docker compose up --build -d
 ```
 
 #### Viewing Logs
@@ -1392,7 +1392,7 @@ docker-compose up --build -d
 To view the logs of a specific service (e.g., backend), use:
 
 ```bash
-docker-compose logs -f backend
+docker compose logs -f backend
 ```
 
 This will tail the logs and show real-time output. Use `CTRL+C` to stop tailing the logs.
@@ -1402,7 +1402,7 @@ This will tail the logs and show real-time output. Use `CTRL+C` to stop tailing 
 To access the shell of a running container (e.g., backend), use:
 
 ```bash
-docker-compose exec backend bash
+docker compose exec backend bash
 ```
 
 This allows you to run commands inside the container. Use `exit` to leave the container shell.
