@@ -15,10 +15,8 @@ const PLACEHOLDER_HASH = "0x0000000000000000000000000000000000000000000000000000
 function getCartesiTemplateHash(): string {
   try {
     const hashFilePath = path.resolve(__dirname, TEMPLATE_HASH_FILE);
-    if (fs.existsSync(hashFilePath)) {
-      const hashFromFile = fs.readFileSync(hashFilePath, 'utf8').trim();
-      console.log(`Using Cartesi template hash from file: ${hashFromFile}`);
-      return hashFromFile;
+    if (fs.existsSync(hashFilePath)) { // Removed erroneous characters
+      return fs.readFileSync(hashFilePath, "utf-8").trim();
     }
   } catch (error) {
     console.error(`Error reading template hash file: ${error}`);
@@ -30,11 +28,11 @@ function getCartesiTemplateHash(): string {
 }
 
 const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
-  const { deployments, getNamedAccounts, getChainId } = hre;
-  const { deploy } = deployments;
+  const { deployments, getNamedAccounts, ethers, network } = hre; // Ensure ethers is from hre, add network
+  const { deploy, execute, get } = deployments; // Add execute and get
   const { deployer, admin } = await getNamedAccounts();
 
-  const chainId = await getChainId();
+  const chainId = network.config.chainId; // Get chainId from network.config
   console.log(`Deploying to chain ID: ${chainId}`);
   console.log(`Deployer account: ${deployer}`);
   console.log(`Admin account: ${admin || deployer}`);
@@ -72,17 +70,33 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   console.log(`Exchange deployed at ${exchange.address}`);
 
   // 4. Optional: Mint some tokens to the deployer for testing
+  console.log(`Checking MINT_TEST_TOKENS environment variable: '${process.env.MINT_TEST_TOKENS}'`);
   if (process.env.MINT_TEST_TOKENS === "true") {
+    console.log("MINT_TEST_TOKENS is true. Proceeding with minting test tokens.");
     const stockTokenContract = await ethers.getContractAt("StockToken", stockToken.address);
-    const mintAmount = ethers.parseUnits("1000", 18); // 1000 tokens with 18 decimals
+    const mintAmount = ethers.utils.parseUnits("1000", 18); // 1000 tokens with 18 decimals
     
-    console.log(`Minting ${mintAmount} tokens to ${deployer}...`);
-    const tx = await stockTokenContract.mint(deployer, mintAmount);
+    // Address for Bob (Account #1 from TEST-ACCOUNTS.md: 0x70997970C51812dc3A010C7d01b50e0d17dc79C8)
+    const bobAddress = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"; 
+
+    console.log(`Attempting to mint ${ethers.utils.formatUnits(mintAmount, 18)} AAPL tokens to Bob (${bobAddress})...`);
+    const tx = await stockTokenContract.mint(bobAddress, mintAmount);
+    console.log(`Mint transaction sent: ${tx.hash}. Waiting for confirmation...`);
     await tx.wait();
-    console.log(`Minted test tokens to ${deployer}`);
+    console.log(`Successfully minted ${ethers.utils.formatUnits(mintAmount, 18)} AAPL tokens to Bob (${bobAddress})`);
+
+    // If you also want to mint to the deployer (Account #0), you can add:
+    // const deployerAddress = (await ethers.getSigners())[0].address;
+    // console.log(`Attempting to mint ${ethers.utils.formatUnits(mintAmount, 18)} AAPL tokens to deployer (${deployerAddress})...`);
+    // const txDeployer = await stockTokenContract.mint(deployerAddress, mintAmount);
+    // console.log(`Mint transaction for deployer sent: ${txDeployer.hash}. Waiting for confirmation...`);
+    // await txDeployer.wait();
+    // console.log(`Successfully minted ${ethers.utils.formatUnits(mintAmount, 18)} AAPL tokens to deployer (${deployerAddress})`);
+  } else {
+    console.log("MINT_TEST_TOKENS is not 'true' or not set. Skipping minting of test tokens.");
   }
 
-  return true;
+  return true; // Ensures the script exits correctly for hardhat-deploy
 };
 
 func.id = "deploy_stock_exchange_contracts"; // Add unique ID for hardhat-deploy

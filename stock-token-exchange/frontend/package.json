@@ -22,7 +22,7 @@
     "web-vitals": "^2.1.4"
   },
   "scripts": {
-    "prestart": "node ./scripts/generate-deployments.js || echo 'Failed to generate deployments, using default values'",
+    "prestart": "node ./scripts/generate-deployments.js",
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",

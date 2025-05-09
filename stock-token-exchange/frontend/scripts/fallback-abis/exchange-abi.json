@@ -1,0 +1,61 @@
+[
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "cartesiComputeAddress",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "templateHash",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "constructor"
+  },
+  {
+    "inputs": [
+      {"internalType": "address", "name": "userAddress", "type": "address"}
+    ],
+    "name": "getUserEthBalance",
+    "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {"internalType": "address", "name": "userAddress", "type": "address"},
+      {"internalType": "address", "name": "tokenAddress", "type": "address"}
+    ],
+    "name": "getUserTokenBalance",
+    "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "getOrderCount",
+    "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {"internalType": "uint256", "name": "orderId", "type": "uint256"}
+    ],
+    "name": "getOrder",
+    "outputs": [
+      {"internalType": "uint256", "name": "id", "type": "uint256"},
+      {"internalType": "address", "name": "user", "type": "address"},
+      {"internalType": "address", "name": "tokenAddress", "type": "address"},
+      {"internalType": "uint256", "name": "amount", "type": "uint256"},
+      {"internalType": "uint256", "name": "price", "type": "uint256"},
+      {"internalType": "bool", "name": "isBuyOrder", "type": "bool"},
+      {"internalType": "bool", "name": "active", "type": "bool"}
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  }
+]

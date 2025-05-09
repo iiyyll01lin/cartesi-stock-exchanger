@@ -5,13 +5,16 @@ services:
     working_dir: /app
     volumes:
       - ./stock-token-exchange:/app
-    # Install dependencies, clean cache, and start Hardhat node
+    # Install dependencies and start Hardhat node without deploying.
+    # The 'deployer' service handles cleaning and deployment.
     command: >
-      bash -c "npm install && npx hardhat clean && exec npx hardhat node"
+      bash -c "npm install && exec npx hardhat node --no-deploy"
     ports:
       - "8545:8545"
     networks:
       - stock-exchange-network
+    environment: # Add this environment section
+      - MINT_TEST_TOKENS=true # To make logs less confusing
 
   # Smart Contract Deployment Service
   deployer:
@@ -22,25 +25,53 @@ services:
       - ./.env:/app/.env # Mount root .env if needed by hardhat config
     # Install dependencies, clean cache, wait for blockchain, deploy contracts and update .env
     command: >
-      bash -c "apt-get update && apt-get install -y jq curl && \
-               npm install && \
-               npx hardhat clean && \
-               echo 'Waiting for blockchain node to start...' && \
-               while ! curl -sf -X POST --data '{\\"jsonrpc\\":\\"2.0\\",\\"method\\":\\"eth_blockNumber\\",\\"params\\":[],\\"id\\":1}' -H 'Content-Type: application/json' http://blockchain:8545 > /dev/null; do \
-                 echo 'Waiting for blockchain...'; \
-                 sleep 1; \
-               done && \
-               echo 'Blockchain started.' && \
-               npx hardhat deploy --network localhost && \
-               echo 'Deployment finished. Exporting ABIs and updating .env...' && \
-               # Paths are now relative to /app/stock-token-exchange
-               EXCHANGE_ADDR=$(jq -r .address ./deployments/localhost/Exchange.json) && \
-               TOKEN_ADDR=$(jq -r .address ./deployments/localhost/StockToken.json) && \
-               # Execute update-env.sh (relative path), target files relative to /app/stock-token-exchange
-               ./update-env.sh --exchange-address $$EXCHANGE_ADDR --token-address $$TOKEN_ADDR --frontend-deployments ./frontend/src/deployments/index.ts && \
-               # Also create a direct copy of the deployment info for the frontend
-               mkdir -p /app/stock-token-exchange/frontend/src/deployments && \
-               echo $'// This file is auto-generated\nexport const EXCHANGE_ADDRESS = \"'$$EXCHANGE_ADDR$'\";\nexport const STOCK_TOKEN_ADDRESS = \"'$$TOKEN_ADDR$'\";\nexport const EXCHANGE_ABI = [];\nexport const STOCK_TOKEN_ABI = [];\nexport const CONTRACT_CHAIN_ID = 31337;\nexport default {exchange:{address:EXCHANGE_ADDRESS,abi:EXCHANGE_ABI},stockToken:{address:STOCK_TOKEN_ADDRESS,abi:STOCK_TOKEN_ABI},chainId:CONTRACT_CHAIN_ID};' > /app/stock-token-exchange/frontend/src/deployments/index.ts"
+      bash -c "
+        set -e # Exit immediately if a command exits with a non-zero status.
+        apt-get update && apt-get install -y jq curl && \\
+        echo 'OS dependencies installed.' && \\
+        npm install && \\
+        echo 'Node.js dependencies installed.' && \\
+        npx hardhat clean && \\
+        echo 'Cleaned previous Hardhat artifacts and cache.' && \\
+        echo 'Explicitly clearing contents of deployments/localhost/ before deployment...' && \\
+        mkdir -p deployments/localhost && rm -rf deployments/localhost/* && \\
+        echo '31337' > deployments/localhost/.chainId && \\
+        echo 'Created .chainId file in deployments/localhost/' && \\
+        echo 'Contents of deployments/localhost/ after clearing (should be empty):' && \\
+        ls -l deployments/localhost/ && \\
+        echo 'Waiting for blockchain node to be responsive...' && \\
+        ATTEMPTS=0 && \\
+        MAX_ATTEMPTS=30 && \\
+        while ! curl -sf -X POST --data '{\"jsonrpc\":\"2.0\",\"method\":\"eth_chainId\",\"params\":[],\"id\":1}' -H 'Content-Type: application/json' http://blockchain:8545 > /dev/null; do \
+          ATTEMPTS=$$((ATTEMPTS + 1)) && \
+          if [ $$ATTEMPTS -ge $$MAX_ATTEMPTS ]; then \
+            echo 'Blockchain not responsive after $$MAX_ATTEMPTS attempts. Exiting.' >&2; \
+            exit 1; \
+          fi && \
+          echo 'Blockchain not yet responsive (attempt $$ATTEMPTS/$$MAX_ATTEMPTS), sleeping for 2s...'; \
+          sleep 2; \
+        done && \
+        echo 'Blockchain is responsive.' && \
+        npx hardhat deploy --network localhost && \
+        echo 'Hardhat deployment finished. Attempting to extract addresses...' && \
+        echo 'Listing contents of deployments/localhost/ before jq extraction:' && \
+        ls -l deployments/localhost/ || echo 'Could not list deployments/localhost/' >&2 && \
+        EXCHANGE_ADDRESS=$$(jq -r .address deployments/localhost/Exchange.json 2>/dev/null || echo '') && \
+        TOKEN_ADDRESS=$$(jq -r .address deployments/localhost/StockToken.json 2>/dev/null || echo '') && \
+        if [ -z \"$$EXCHANGE_ADDRESS\" ] || [ \"$$EXCHANGE_ADDRESS\" == \"null\" ] || [ -z \"$$TOKEN_ADDRESS\" ] || [ \"$$TOKEN_ADDRESS\" == \"null\" ]; then \
+          echo 'Error: Failed to extract contract addresses from deployment artifacts.' >&2; \
+          echo 'Attempting to display contents of JSON files (if they exist):' >&2; \
+          echo '--- Exchange.json ---' >&2; \
+          cat deployments/localhost/Exchange.json || echo 'Exchange.json not found or unreadable.' >&2; \
+          echo '--- StockToken.json ---' >&2; \
+          cat deployments/localhost/StockToken.json || echo 'StockToken.json not found or unreadable.' >&2; \
+          exit 1; \
+        fi && \
+        echo \"Extracted Exchange Address: $$EXCHANGE_ADDRESS\" && \
+        echo \"Extracted Token Address: $$TOKEN_ADDRESS\" && \
+        ./update-env.sh --exchange-address \"$$EXCHANGE_ADDRESS\" --token-address \"$$TOKEN_ADDRESS\" && \
+        echo 'Finished updating .env files via update-env.sh.'
+      "
     depends_on:
       blockchain:
         condition: service_started
@@ -48,6 +79,7 @@ services:
       - stock-exchange-network
     environment:
       - HARDHAT_NETWORK=localhost # Ensure deploy script uses localhost
+      - MINT_TEST_TOKENS=true # Mint test tokens to Bob
 
   # Backend Server (Flask)
   backend:
@@ -107,35 +139,20 @@ services:
       - FAST_REFRESH=false
       - REACT_FAST_REFRESH=false
     depends_on:
-      - backend
-      - deployer # Ensure deployments are potentially ready
+      backend: # Ensures backend service has started
+        condition: service_started 
+      deployer: # Ensure deployments are completed and .env updated
+        condition: service_completed_successfully
     # Run the export script first, then start react
     # Use sh -c to run multiple commands
     # Use relative paths assuming working_dir is /app
     command: >
       sh -c "
-        echo '--- Running deployment export ---' && 
-        # Need to install parent dependencies for ts-node if not already present
-        # This assumes the frontend Dockerfile doesn't install them
-        # Consider adding ts-node and typescript to frontend/package.json devDependencies instead
-        # Or build a shared base image
-        # Quick fix: install parent deps if node_modules isn't there
-        if [ ! -d "/app/node_modules" ]; then npm install --prefix /app; fi && 
-        # Run the export script using ts-node from the parent context
-        # Adjust path relative to /app if needed
-        # Assuming export-deployments.ts expects to be run from stock-token-exchange level
-        # We need to adjust paths inside the script or run it differently.
-        # Let's try running it directly, assuming paths inside are relative to script location
-        # Or better: modify export script to accept output path
-        # For now, assume it writes to ../frontend/src/deployments
-        # We need ts-node installed globally or locally
-        # Let's install it temporarily if not found
-        if ! command -v ts-node &> /dev/null; then npm install -g ts-node typescript; fi && 
-        echo 'Running ts-node scripts/export-deployments.ts...' && 
-        # Execute ts-node pointing to the script mounted at /app/scripts
-        # The script needs to correctly reference /app/deployments_src and output to /app/src/deployments
-        ts-node /app/scripts/export-deployments.ts && 
-        echo '--- Starting React app ---' && 
+        echo \'--- Ensuring frontend/src/deployments directory exists ---\' &&
+        mkdir -p /app/src/deployments &&
+        echo \'--- Running deployment export script (generate-deployments.js) ---\' && 
+        node ./scripts/generate-deployments.js && 
+        echo \'--- Finished deployment export script ---\' && 
         npm start
       "
     working_dir: /app # Set working directory inside container

@@ -116,6 +116,7 @@ const Dashboard: React.FC = () => {
         tokenSymbol={tokenSymbol}
         exchangeEthBalance={exchangeEthBalance}
         isLoading={isLoading}
+        onNetworkSwitch={fetchUserBalances} // Add this prop
       />
       
       <div className="message" style={{ color: errorMessage ? 'red' : 'inherit' }}>

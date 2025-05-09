@@ -118,6 +118,15 @@ export function useWallet() {
               if (newChainId === CHAIN_CONFIG.chainId) {
                 setNetworkWarning(false);
                 addNotification('success', 'Successfully connected to Hardhat network');
+                
+                // Give time for the network to stabilize before fetching balances
+                setTimeout(() => {
+                  // Refresh provider and signer
+                  const web3Provider = new ethers.providers.Web3Provider(window.ethereum);
+                  setProvider(web3Provider);
+                  setSigner(web3Provider.getSigner());
+                  console.log("Provider and signer refreshed after network switch");
+                }, 1000);
               }
             }
           } catch (error) {

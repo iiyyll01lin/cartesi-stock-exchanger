@@ -135,12 +135,15 @@ const DepositWithdrawForm: React.FC<DepositWithdrawFormProps> = ({
         <div className="form-section">
           <h3>{tokenSymbol}</h3>
           <div className="balance-info">
-            <strong>Exchange Balance:</strong> {parseFloat(exchangeTokenBalance).toFixed(4)} {tokenSymbol}
+            <strong>Exchange Balance:</strong> {parseFloat(exchangeTokenBalance || '0').toFixed(4)} {tokenSymbol}
             {!isConnectedToCorrectNetwork && (
               <div className="warning-message">
                 * This balance may be outdated. Connect to Hardhat Network to see accurate balances.
               </div>
             )}
+            <div className="helper-note">
+              <small>* Tokens must be deposited to the exchange before placing sell orders or they won't appear in your Exchange Balance.</small>
+            </div>
           </div>
           <div className="action-row">
             <div className="input-group">

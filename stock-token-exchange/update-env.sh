@@ -82,8 +82,10 @@ update_frontend_deployments() {
 }
 
 # Default file paths (can be overridden by arguments)
-FRONTEND_DEPLOYMENTS_FILE="$ROOT_DIR/frontend/src/deployments/index.ts"
-ROOT_ENV_FILE="$ROOT_DIR/.env" # Root .env for deployer to update
+# Correctly define FRONTEND_DEPLOYMENTS_FILE relative to the script's location within the container
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FRONTEND_DEPLOYMENTS_FILE="$SCRIPT_DIR/frontend/src/deployments/index.ts"
+ROOT_ENV_FILE="$SCRIPT_DIR/../.env" # Root .env is one level up from stock-token-exchange directory
 
 # Process arguments
 while [[ $# -gt 0 ]]; do

@@ -125,7 +125,18 @@ def get_balance(user_address):
             
             wallet_token_balance_wei = 0
             if stock_token_contract: # Ensure stock_token_contract is initialized
-                wallet_token_balance_wei = stock_token_contract.functions.balanceOf(checksum_user_address).call()
+                try:
+                    wallet_token_balance_wei = stock_token_contract.functions.balanceOf(checksum_user_address).call()
+                    logger.info(f"Retrieved token balance for {user_address}: {wallet_token_balance_wei}")
+                except Exception as e:
+                    logger.error(f"Error calling balanceOf for {user_address}: {e}")
+                    # Try to determine if this is an actual connection issue or contract issue
+                    try:
+                        # Test if the contract is accessible by calling a simple view function
+                        symbol = stock_token_contract.functions.symbol().call()
+                        logger.info(f"Contract is accessible (symbol: {symbol}), but balanceOf call failed")
+                    except Exception as e2:
+                        logger.error(f"Contract is not accessible: {e2}")
             else:
                 logger.warning("StockToken contract not available for fetching wallet token balance.")
 

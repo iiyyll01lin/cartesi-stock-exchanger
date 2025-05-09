@@ -215,73 +215,100 @@ export async function fetchBalances(
   exchangeTokenBalance: string;
 } | null> {
   try {
-    // Fetch ETH balance in wallet
-    let ethBalance = await provider.getBalance(userAddress);
-    
-    // Fetch token balance in wallet
-    let tokenBalance;
-    try {
-      tokenBalance = await tokenContract.balanceOf(userAddress);
-    } catch (error) {
-      console.error('Error getting token balance:', error);
-      tokenBalance = ethers.BigNumber.from(0);
+    // Validate input parameters
+    if (!userAddress || !ethers.utils.isAddress(userAddress)) {
+      console.error(`Invalid user address: ${userAddress}`);
+      return null;
     }
     
-    // Fetch ETH balance in exchange
-    let exchangeEthBalance;
+    if (!tokenContract?.address) {
+      console.error(`Invalid token contract: ${tokenContract}`);
+      return null;
+    }
+    
+    if (!exchangeContract?.address) {
+      console.error(`Invalid exchange contract: ${exchangeContract}`);
+      return null;
+    }
+    
+    console.log(`[contracts.ts] Fetching token balance for user ${userAddress} on token ${tokenContract.address} using provider ${provider.connection.url}`);
+    
+    // Fetch ETH balance from the provider (wallet balance)
+    const ethBalanceBigNumber = await provider.getBalance(userAddress);
+    console.log(`[contracts.ts] ETH balance: ${ethers.utils.formatEther(ethBalanceBigNumber)}`);
+    
+    // Fetch token balance using multiple approaches (for debugging)
+    let tokenBalanceBigNumber;
+    
     try {
-      if (exchangeContract.getUserEthBalance && typeof exchangeContract.getUserEthBalance === 'function') {
-        exchangeEthBalance = await exchangeContract.getUserEthBalance(userAddress);
-      } else {
-        console.error('getUserEthBalance function not found on exchange contract');
-        exchangeEthBalance = ethers.BigNumber.from(0);
-      }
+      // Attempt 1: Using the direct contract call
+      tokenBalanceBigNumber = await tokenContract.balanceOf(userAddress);
+      console.log(`[contracts.ts] Raw tokenBalanceBigNumber for ${userAddress}: ${tokenBalanceBigNumber.toString()}`);
+      console.log(`[contracts.ts] Wallet token balance (direct): ${ethers.utils.formatEther(tokenBalanceBigNumber)}`);
     } catch (error) {
-      console.error('Error getting exchange ETH balance:', error);
+      console.error(`[contracts.ts] Error with direct token balance call:`, error);
+      
+      try {
+        // Attempt 2: Using a signer to make the call
+        const signer = provider.getSigner();
+        const tokenWithSigner = tokenContract.connect(signer);
+        tokenBalanceBigNumber = await tokenWithSigner.balanceOf(userAddress);
+        console.log(`[contracts.ts] Wallet token balance (with signer): ${ethers.utils.formatEther(tokenBalanceBigNumber)}`);
+      } catch (signerError) {
+        console.error(`[contracts.ts] Signer attempt also failed:`, signerError);
+        
+        try {
+          // Attempt 3: Using a read-only provider
+          const readOnlyProvider = new ethers.providers.JsonRpcProvider('http://localhost:8545');
+          const readOnlyTokenContract = new ethers.Contract(tokenContract.address, tokenContract.interface, readOnlyProvider);
+          tokenBalanceBigNumber = await readOnlyTokenContract.balanceOf(userAddress);
+          console.log(`[contracts.ts] Wallet token balance (read-only provider): ${ethers.utils.formatEther(tokenBalanceBigNumber)}`);
+        } catch (readOnlyError) {
+          console.error(`[contracts.ts] Read-only provider attempt also failed:`, readOnlyError);
+          // Default to zero if all attempts fail
+          tokenBalanceBigNumber = ethers.BigNumber.from(0);
+        }
+      }
+    }
+
+    // Fetch exchange balances
+    let exchangeEthBalance, exchangeTokenBalance;
+    
+    try {
+      exchangeEthBalance = await exchangeContract.getUserEthBalance(userAddress);
+      console.log(`[contracts.ts] Exchange ETH balance: ${ethers.utils.formatEther(exchangeEthBalance)}`);
+    } catch (error) {
+      console.error(`[contracts.ts] Error getting exchange ETH balance:`, error);
       exchangeEthBalance = ethers.BigNumber.from(0);
     }
     
-    // Fetch token balance in exchange
-    let exchangeTokenBalance;
     try {
-      if (exchangeContract.getUserTokenBalance && typeof exchangeContract.getUserTokenBalance === 'function') {
-        exchangeTokenBalance = await exchangeContract.getUserTokenBalance(
-          userAddress,
-          CONTRACT_ADDRESSES.token
-        );
-      } else {
-        console.error('getUserTokenBalance function not found on exchange contract');
-        exchangeTokenBalance = ethers.BigNumber.from(0);
-      }
+      exchangeTokenBalance = await exchangeContract.getUserTokenBalance(userAddress, tokenContract.address);
+      console.log(`[contracts.ts] Exchange token balance: ${ethers.utils.formatEther(exchangeTokenBalance)}`);
     } catch (error) {
-      console.error('Error getting exchange token balance:', error);
+      console.error(`[contracts.ts] Error getting exchange token balance:`, error);
       exchangeTokenBalance = ethers.BigNumber.from(0);
     }
     
-    // Log balances for debugging
-    console.log('User balances:', {
-      userAddress,
-      walletEth: ethers.utils.formatEther(ethBalance),
-      walletToken: ethers.utils.formatEther(tokenBalance),
-      exchangeEth: ethers.utils.formatEther(exchangeEthBalance),
-      exchangeToken: ethers.utils.formatEther(exchangeTokenBalance)
-    });
-    
-    return {
-      ethBalance: ethers.utils.formatEther(ethBalance),
-      tokenBalance: ethers.utils.formatEther(tokenBalance),
+    // Format all balances consistently
+    const result = {
+      ethBalance: ethers.utils.formatEther(ethBalanceBigNumber),
+      tokenBalance: ethers.utils.formatEther(tokenBalanceBigNumber),
       exchangeEthBalance: ethers.utils.formatEther(exchangeEthBalance),
       exchangeTokenBalance: ethers.utils.formatEther(exchangeTokenBalance)
     };
+    
+    console.log(`[contracts.ts] Final balance results:`, result);
+    return result;
   } catch (error) {
-    console.error("Error fetching balances:", error);
+    console.error(`[contracts.ts] Critical error fetching balances:`, error);
     return null;
   }
 }
 
 /**
  * Fetch balances from contracts
- * This is an alias for the fetchBalances function
+ * This is an optimized version that reduces redundant network calls
  */
 export async function fetchBalancesFromContracts(
   userAddress: string,
@@ -293,12 +320,48 @@ export async function fetchBalancesFromContracts(
   exchangeEthBalance: string;
   exchangeTokenBalance: string;
 } | null> {
-  if (!tokenContract || !exchangeContract) return null;
-  
-  const provider = tokenContract.provider as ethers.providers.Web3Provider;
-  if (!provider) return null;
-  
-  return await fetchBalances(userAddress, provider, tokenContract, exchangeContract);
+  try {
+    if (!tokenContract || !exchangeContract || !userAddress) {
+      return null;
+    }
+    
+    // Use a direct JsonRpcProvider for more reliable connections
+    const provider = new ethers.providers.JsonRpcProvider('http://localhost:8545');
+    
+    // Create static contract instances
+    const staticTokenContract = new ethers.Contract(
+      tokenContract.address,
+      tokenContract.interface,
+      provider
+    );
+    
+    const staticExchangeContract = new ethers.Contract(
+      exchangeContract.address,
+      exchangeContract.interface,
+      provider
+    );
+    
+    // Use Promise.all to make parallel requests for better performance
+    const [ethBalance, tokenBalance, exchangeEthBalance, exchangeTokenBalance] = await Promise.all([
+      provider.getBalance(userAddress).catch(() => ethers.BigNumber.from(0)),
+      staticTokenContract.balanceOf(userAddress).catch(() => ethers.BigNumber.from(0)),
+      staticExchangeContract.getUserEthBalance(userAddress).catch(() => ethers.BigNumber.from(0)),
+      staticExchangeContract.getUserTokenBalance(userAddress, tokenContract.address).catch(() => ethers.BigNumber.from(0))
+    ]);
+    
+    // Format results
+    const result = {
+      ethBalance: ethers.utils.formatEther(ethBalance),
+      tokenBalance: ethers.utils.formatEther(tokenBalance),
+      exchangeEthBalance: ethers.utils.formatEther(exchangeEthBalance),
+      exchangeTokenBalance: ethers.utils.formatEther(exchangeTokenBalance)
+    };
+    
+    return result;
+  } catch (error) {
+    console.error("[contracts.ts] Error in fetchBalancesFromContracts:", error);
+    return null;
+  }
 }
 
 /**

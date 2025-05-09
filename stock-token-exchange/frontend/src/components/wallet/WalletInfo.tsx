@@ -12,6 +12,7 @@ interface WalletInfoProps {
   isLoading: boolean;
   exchangeEthBalance?: string; // Added exchange ETH balance
   connectWallet?: () => Promise<void>;
+  onNetworkSwitch?: () => void; // Add this new prop
 }
 
 const WalletInfo: React.FC<WalletInfoProps> = ({
@@ -21,7 +22,8 @@ const WalletInfo: React.FC<WalletInfoProps> = ({
   tokenBalance,
   tokenSymbol,
   isLoading,
-  exchangeEthBalance = "0" // Default to 0 if not provided
+  exchangeEthBalance = "0", // Default to 0 if not provided
+  onNetworkSwitch
 }) => {
   const { connectWallet, forceReconnect } = useWalletContext();
   const [isReconnecting, setIsReconnecting] = useState(false);
@@ -41,6 +43,14 @@ const WalletInfo: React.FC<WalletInfoProps> = ({
     setIsReconnecting(true);
     try {
       await connectWallet();
+      // Add a more substantial delay before fetching balances to ensure network is ready
+      // This prevents excessive balance checks during network switching
+      if (onNetworkSwitch) {
+        setTimeout(() => {
+          console.log("Triggering balance refresh after network switch");
+          onNetworkSwitch();
+        }, 2500); // 2.5 seconds delay
+      }
     } finally {
       setIsReconnecting(false);
     }

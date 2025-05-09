@@ -123,17 +123,38 @@ export function useDepositWithdraw(
       
       // Convert to token units
       const tokenAmount = ethers.utils.parseEther(amount);
+      console.log("Depositing token:", {
+        tokenAddress,
+        tokenAmount: tokenAmount.toString(),
+        amount,
+        exchangeAddress: exchangeContract.address
+      });
       
-      // First approve the exchange to spend tokens
-      // const approvalTx = await tokenContract.approve(exchangeContract.address, tokenAmount);
-      // await approvalTx.wait();
-      // addNotification('success', 'Approval successful');
+      // First check allowance
+      const allowance = await tokenContract.allowance(account, exchangeContract.address);
+      console.log("Current allowance:", ethers.utils.formatEther(allowance));
+      
+      // If allowance is insufficient, approve the exchange
+      if (allowance.lt(tokenAmount)) {
+        console.log("Setting approval for exchange");
+        const approvalTx = await tokenContract.approve(exchangeContract.address, tokenAmount);
+        console.log("Approval transaction submitted:", approvalTx.hash);
+        const approvalReceipt = await approvalTx.wait();
+        console.log("Approval confirmed:", approvalReceipt);
+        addNotification('success', 'Token approval successful');
+      }
 
-      const tx = await exchangeContract.depositToken(tokenAddress, tokenAmount);
+      // Now deposit the tokens
+      console.log("Depositing tokens to exchange");
+      const tx = await exchangeContract.depositToken(tokenAddress, tokenAmount, {
+        gasLimit: 250000 // Explicit gas limit to avoid estimation errors
+      });
+      console.log("Deposit transaction submitted:", tx.hash);
       const receipt = await tx.wait();
+      console.log("Deposit confirmed:", receipt);
 
       if (receipt.status === 1) {
-        addNotification('success', `Successfully deposited ${amount} ${tokenAddress}`); // Assuming tokenAddress is symbol here, or fetch symbol
+        addNotification('success', `Successfully deposited ${amount} tokens to exchange`);
         if (onTransactionSuccess) onTransactionSuccess(); // Call callback
       } else {
         addNotification('error', 'Token deposit transaction failed');
