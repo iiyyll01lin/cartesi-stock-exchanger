@@ -2,6 +2,8 @@
 
 This project implements a decentralized stock token exchange leveraging Cartesi for verifiable off-chain computation.
 
+> **⚠️ IMPORTANT:** Docker permissions are required to run this project. Make sure you either run the scripts with `sudo` or add your user to the docker group with `sudo usermod -aG docker $USER` (requires logout/login to take effect).
+
 ## Overview
 
 The exchange allows users to deposit ETH and specific stock tokens (like AAPL, represented as ERC20) into a smart contract. Buy and sell orders are placed on-chain, locking the necessary funds. The complex task of matching these orders is delegated to a Cartesi Machine, which runs a Python script (`offchain_logic.py`) implementing a price-time priority matching algorithm. Once the Cartesi computation is complete and finalized, an authorized admin triggers an on-chain function to process the results, updating user balances and order statuses according to the matched trades verified by Cartesi Compute.
@@ -9,6 +11,227 @@ The exchange allows users to deposit ETH and specific stock tokens (like AAPL, r
 ## Frontend Design
 
 ![frontend design](./frontend-design.png)
+
+## Overview: Containers Point of View
+
+![arch-ppt](./arch-ppt.png)
+
+## Docker Container Architecture with simulated python-runner
+
+The following diagram illustrates the roles of the different Docker containers defined in `docker-compose.yml` and how they interact:
+
+```mermaid
+graph TD
+    User["User (Browser + MetaMask)"]
+
+    subgraph "Runtime Docker Containers"
+        F[("frontend"<br>React UI - Port 3000)]
+        B[("backend"<br>Flask API - Port 5001)]
+        BC[("blockchain"<br>Hardhat Node - Port 8545)]
+    end
+
+    subgraph "Build/Test Docker Containers (Run to completion or for development)"
+        D[("deployer"<br>Deploys Smart Contracts)]
+        T[("tester"<br>Runs Automated Tests)]
+        C[("cartesi"<br>Builds Cartesi Machine Template)]
+        PR[("python-runner"<br>Tests Off-chain Logic - Port 5000)]
+    end
+
+    User -- HTTP --> F
+    User -- Blockchain RPC (MetaMask) --> BC
+
+    F -- API Calls --> B
+    B -- Smart Contract Calls --> BC
+
+    D -- Deploys to --> BC
+    D -- Updates config --> SharedEnv[(.env file on host)]
+    SharedEnv -- Read by --> F
+    SharedEnv -- Read by --> B
+    SharedEnv -- Read by --> C
+    SharedEnv -- Read by --> PR
+
+
+    T -- Tests against --> BC
+
+    C -.->|Outputs Template Hash for| D
+    PR -.->|Provides Python logic for| C
+
+
+    classDef runtime fill:#D6EAF8,stroke:#2980B9,stroke-width:2px;
+    classDef buildtest fill:#E8DAEF,stroke:#8E44AD,stroke-width:2px;
+    classDef user fill:#FDEDEC,stroke:#E74C3C,stroke-width:2px;
+    classDef config fill:#FCF3CF,stroke:#F39C12,stroke-width:2px;
+
+    class User user;
+    class F,B,BC runtime;
+    class D,T,C,PR buildtest;
+    class SharedEnv config;
+```
+
+**Key Container Roles & Interactions:**
+
+*   **Runtime Containers:**
+    *   `blockchain`: Runs the local Hardhat Ethereum node.
+    *   `backend`: The Flask API server that interacts with the `blockchain` for data and administrative tasks (like triggering Cartesi computations).
+    *   `frontend`: The React-based user interface that users interact with. It communicates with the `backend` API and directly with the `blockchain` via MetaMask for transactions.
+*   **Build/Test Containers:**
+    *   `deployer`: Responsible for deploying the smart contracts to the `blockchain` service. It also updates the shared `.env` file with contract addresses.
+    *   `tester`: Executes automated tests (e.g., Hardhat tests) against the contracts deployed on the `blockchain`.
+    *   `cartesi`: Provides an environment (using `cartesi/playground`) to build the Cartesi machine template from `offchain_logic.py`. The resulting template hash is used by the `deployer` (and subsequently the `Exchange.sol` contract).
+    *   `python-runner`: A development service running a Flask server to test the `offchain_logic.py` script independently, simulating how it might behave within a Cartesi machine. This container only runs during development/testing, while in production, the off-chain logic is executed inside the Cartesi Machine Instance run by validator nodes.
+*   **Shared Configuration (`.env` file):**
+    *   This file, located at the project root and mounted into relevant containers, stores crucial configuration like deployed contract addresses and Cartesi template hashes. The `deployer` service updates it, and other services (`backend`, `frontend`, `cartesi`, `python-runner`) read from it.
+
+This setup allows for a modular development and deployment process, where each component can be managed and scaled independently.
+
+## Overall System Architecture including Cartesi Validators
+
+The following diagram expands on the Docker container architecture to include the conceptual Cartesi validator nodes responsible for executing the off-chain computation.
+
+```mermaid
+graph TD
+    User["User/Developer"]
+
+    subgraph "Local Development & Build Environment (docker-compose.yml)"
+        F[("frontend"<br>React UI)]
+        B[("backend"<br>Flask API)]
+        BC[("blockchain"<br>Hardhat Node)]
+        D[("deployer"<br>Deploys Contracts)]
+        T[("tester"<br>Runs Tests)]
+        CE[("cartesi-env"<br>Builds Cartesi Machine Template)]
+        PR[("python-runner"<br>Simulates Off-chain Logic)]
+    end
+
+    subgraph "Conceptual Cartesi Off-Chain Network"
+        subgraph "Validator Nodes"
+            CV1["Cartesi Validator 1"]
+            CV2["Cartesi Validator 2"]
+            CVn["Cartesi Validator N"]
+        end
+        CM["Cartesi Machine Instance<br>(executes offchain_logic.py)"]
+    end
+    
+    OL[("offchain_logic.py<br>Order Matching Script")]
+
+
+    User -- Browser --> F
+    User -- Admin/Dev Tasks (API/CLI) --> B
+    User -- Dev Tasks (CLI for contracts) --> D
+    User -- Dev Tasks (CLI for tests) --> T
+    User -- Dev Tasks (CLI to build machine template) --> CE
+    User -- Dev Tasks (CLI to test offchain_logic.py) --> PR
+
+    F -- HTTP API Calls --> B
+    F -- Blockchain RPC (via MetaMask) --> BC
+
+    B -- Blockchain RPC (Contract Calls, e.g., trigger computation) --> BC
+
+    D -- Deploys Contracts to --> BC
+    D -- Updates config --> SharedEnv[(.env file on host)]
+
+    T -- Tests against --> BC
+
+    CE -- Builds template containing --> OL
+    CE -.-> D
+    CE -- "Outputs Machine Template Hash (used by D)" --> D
+
+    PR -- Simulates execution of --> OL
+
+
+    BC -- Computation Request Event (via Exchange Contract) --> CV1
+    BC -- Computation Request Event (via Exchange Contract) --> CV2
+    BC -- Computation Request Event (via Exchange Contract) --> CVn
+
+    CV1 -- Instantiates & Runs --> CM
+    CV2 -- Instantiates & Runs --> CM
+    CVn -- Instantiates & Runs --> CM
+    
+    CM -- Contains & Executes --> OL
+
+    CM -- Computation Result --> CV1
+    CM -- Computation Result --> CV2
+    CM -- Computation Result --> CVn
+
+    CV1 -- Submits Result to Exchange Contract on --> BC
+    CV2 -- Submits Result to Exchange Contract on --> BC
+    CVn -- Submits Result to Exchange Contract on --> BC
+
+    SharedEnv -- Read by --> F
+    SharedEnv -- Read by --> B
+    SharedEnv -- Read by --> CE
+    SharedEnv -- Read by --> PR
+
+    classDef runtime fill:#D6EAF8,stroke:#2980B9,stroke-width:2px;
+    classDef buildtest fill:#E8DAEF,stroke:#8E44AD,stroke-width:2px;
+    classDef user fill:#FDEDEC,stroke:#E74C3C,stroke-width:2px;
+    classDef config fill:#FCF3CF,stroke:#F39C12,stroke-width:2px;
+    classDef cartesi_network fill:#D5F5E3,stroke:#1D8348,stroke-width:2px;
+    classDef script fill:#E9D8FD,stroke:#8E44AD,stroke-width:2px;
+
+
+    class User user;
+    class F,B,BC runtime;
+    class D,T,CE,PR buildtest;
+    class SharedEnv config;
+    class CV1,CV2,CVn,CM cartesi_network;
+    class OL script;
+```
+
+### Brief Component Roles
+
+* **Local Docker Environment**
+  * `frontend`: User Interface.
+  * `backend`: API and business logic.
+  * `blockchain`: Local Ethereum node.
+  * `deployer`: Deploys smart contracts.
+  * `tester`: Runs tests.
+  * `cartesi-env`: Builds Cartesi machine template.
+  * `python-runner`: Simulates off-chain Python logic during development only.
+* **Conceptual Cartesi Network**
+  * `Cartesi Validators`: Execute and verify off-chain computations.
+  * `Cartesi Machine Instance`: Runs the `offchain_logic.py` script in production.
+* **Key Interactions**
+  * User interacts with local services (`frontend`, `backend`, etc.).
+  * Local services interact among themselves and with the `blockchain`.
+  * The `blockchain` (via smart contract events) triggers the Cartesi Validators.
+  * Validators use the Cartesi Machine (running `offchain_logic.py`) for computation.
+  * Validators submit results back to the `blockchain`.
+
+## Off-Chain Logic Execution Environments
+
+The order matching logic (`offchain_logic.py`) runs in two different environments depending on the context:
+
+1. **During Development/Testing**: 
+   * The `python-runner` container runs the off-chain logic directly
+   * This container provides a Flask server on port 5000 that simulates how the logic would behave in a Cartesi Machine
+   * It's used for rapid development and testing without needing the full Cartesi infrastructure
+   * Data flows directly between the backend/frontend and this container via HTTP
+   * Changes to the matching algorithm can be quickly tested without rebuilding the Cartesi Machine template
+
+2. **In Production/Actual Execution**:
+   * The off-chain logic is executed inside a Cartesi Machine Instance that's run by the Cartesi Validator nodes
+   * This is part of the "Conceptual Cartesi Off-Chain Network" section in the system architecture
+   * The Cartesi Machine "Contains & Executes" the `offchain_logic.py` script with cryptographic verification
+   * Data flows between the smart contract and the Validator nodes via blockchain events
+   * Input data is ABI-encoded in the smart contract and passed to Cartesi Validators
+   * Output data from the Cartesi Machine is cryptographically verified before being processed by the smart contract
+
+The `cartesi-env` (or `cartesi`) container doesn't run the logic directly - it builds the Cartesi Machine template that contains the `offchain_logic.py` script, producing a template hash that's used by the deployer and Exchange contract. This template hash is a crucial component in the Cartesi verification system, as it ensures that all validators are running the exact same code.
+
+### Technical Details of Data Flow Between Environments
+
+As described in the order matching analysis document, there are two key functions that handle the data flow between the smart contract and the off-chain computation:
+
+1. **`triggerOrderMatching`/`triggerCartesiComputation`**: Collects active orders and sends them to Cartesi for matching
+   * Orders are ABI-encoded in the smart contract before being passed to the Cartesi Machine
+   * The Python script in the Cartesi Machine must decode this ABI-encoded input data
+
+2. **`processMatchResult`**: Receives the results of the matching algorithm and applies them to the blockchain state
+   * Validates that the computation was properly executed and verified by Cartesi
+   * Decodes the matching results and processes the trades on-chain
+   * Updates order statuses and user balances based on the matched trades
+
+This data flow ensures that complex order matching operations can be performed off-chain while still being verifiable on-chain, combining the efficiency of off-chain computation with the security of blockchain.
 
 ## Project Structure
 
@@ -597,6 +820,7 @@ Retrieves all active orders in the exchange.
 Retrieves a specific order by ID.
 
 **Parameters:**
+
 * `order_id`: The unique identifier of the order
 
 **Response:**
@@ -653,6 +877,7 @@ Simulates placing a new order. In a real scenario, orders would be placed direct
 Retrieves a user's ETH and token balances.
 
 **Parameters:**
+
 * `address`: The Ethereum address of the user
 
 **Response:**
@@ -707,6 +932,7 @@ Triggers the order matching computation via Cartesi. In production, this would b
 Processes the results of a Cartesi computation. In production, this would be called by an admin after the computation is finalized.
 
 **Parameters:**
+
 * `cartesi_index`: The index of the Cartesi computation to process
 
 **Response (real mode):**
@@ -749,7 +975,7 @@ The API can operate in two modes:
 
 1. **Real Mode**: In this mode, the API interacts with the actual blockchain contracts. Requires proper configuration of Web3 provider URL and admin private key.
 
-2. **Simulation Mode**: When blockchain connection is unavailable or incomplete, the API falls back to a mock database. This is useful for development and testing without a blockchain.
+2. **Simulation Mode**: When blockchain connection is unavailable, the API falls back to a mock database. This is useful for development and testing without a blockchain.
 
 ### Configuration
 
@@ -1184,6 +1410,7 @@ console.log("Tokens in exchange:", ethers.utils.formatEther(await exchange.getUs
 ```
 
 Expected results:
+
 * Both orders should be marked as inactive (filled)
 * Alice should have 10 STOCK tokens in her exchange balance
 * Bob should have 1 ETH (10 tokens × 0.1 ETH) in his exchange balance
@@ -1231,6 +1458,7 @@ This walkthrough demonstrates the complete flow:
 8. Fund withdrawals
 
 The key points illustrated:
+
 * The separation of concerns between on-chain and off-chain operations
 * How the Cartesi machine enables complex matching algorithms off-chain
 * The verification and processing of results back on-chain
@@ -1412,3 +1640,100 @@ This allows you to run commands inside the container. Use `exit` to leave the co
 * Ensure that your Docker Desktop or Docker Engine is running before executing Docker commands.
 * For Windows users, consider using WSL 2 (Windows Subsystem for Linux) for better compatibility with Docker and Linux-based tools.
 * Regularly pull the latest changes from the repository to stay updated with the latest features and fixes.
+
+## System Diagram with Validator Subgrouping and Execution Environments
+
+```mermaid
+graph TD
+    User["User/Developer"]
+
+    subgraph "Local Development & Build Environment (docker-compose.yml)"
+        F[("frontend"<br>React UI)]
+        B[("backend"<br>Flask API)]
+        BC[("blockchain"<br>Hardhat Node)]
+        D[("deployer"<br>Deploys Contracts)]
+        T[("tester"<br>Runs Tests)]
+        CE[("cartesi-env"<br>Builds Cartesi Machine Template)]
+        PR[("python-runner"<br>Simulates Off-chain Logic<br>DEVELOPMENT ONLY)]
+    end
+
+    subgraph "Conceptual Cartesi Off-Chain Network"
+        subgraph "Validator Nodes"
+            CV1["Cartesi Validator 1"]
+            CV2["Cartesi Validator 2"]
+            CVn["Cartesi Validator N"]
+        end
+        CM["Cartesi Machine Instance<br>(executes offchain_logic.py)<br>PRODUCTION EXECUTION"]
+    end
+    
+    OL[("offchain_logic.py"<br>Order Matching Script)]
+
+
+    User -- Browser --> F
+    User -- Admin/Dev Tasks (API/CLI) --> B
+    User -- Dev Tasks (CLI for contracts) --> D
+    User -- Dev Tasks (CLI for tests) --> T
+    User -- Dev Tasks (CLI to build machine template) --> CE
+    User -- Dev Tasks (CLI to test offchain_logic.py) --> PR
+
+    F -- HTTP API Calls --> B
+    F -- Blockchain RPC (via MetaMask) --> BC
+
+    B -- Blockchain RPC (Contract Calls, e.g., trigger computation) --> BC
+
+    D -- Deploys Contracts to --> BC
+    D -- Updates config --> SharedEnv[(.env file on host)]
+
+    T -- Tests against --> BC
+
+    CE -- Builds template containing --> OL
+    CE -.-> D
+    CE -- "Outputs Machine Template Hash (used by D)" --> D
+
+    PR -- Simulates execution of --> OL
+
+
+    BC -- Computation Request Event (via Exchange Contract) --> CV1
+    BC -- Computation Request Event (via Exchange Contract) --> CV2
+    BC -- Computation Request Event (via Exchange Contract) --> CVn
+
+    CV1 -- Instantiates & Runs --> CM
+    CV2 -- Instantiates & Runs --> CM
+    CVn -- Instantiates & Runs --> CM
+    
+    CM -- Contains & Executes --> OL
+
+    CM -- Computation Result --> CV1
+    CM -- Computation Result --> CV2
+    CM -- Computation Result --> CVn
+
+    CV1 -- Submits Result to Exchange Contract on --> BC
+    CV2 -- Submits Result to Exchange Contract on --> BC
+    CVn -- Submits Result to Exchange Contract on --> BC
+
+    SharedEnv -- Read by --> F
+    SharedEnv -- Read by --> B
+    SharedEnv -- Read by --> CE
+    SharedEnv -- Read by --> PR
+
+    classDef runtime fill:#D6EAF8,stroke:#2980B9,stroke-width:2px;
+    classDef buildtest fill:#E8DAEF,stroke:#8E44AD,stroke-width:2px;
+    classDef user fill:#FDEDEC,stroke:#E74C3C,stroke-width:2px;
+    classDef config fill:#FCF3CF,stroke:#F39C12,stroke-width:2px;
+    classDef cartesi_network fill:#D5F5E3,stroke:#1D8348,stroke-width:2px;
+    classDef script fill:#E9D8FD,stroke:#8E44AD,stroke-width:2px;
+
+    class User user;
+    class F,B,BC runtime;
+    class D,T,CE,PR buildtest;
+    class SharedEnv config;
+    class CV1,CV2,CVn,CM cartesi_network;
+    class OL script;
+```
+
+This updated diagram highlights the execution environments for the off-chain logic:
+
+1. The `python-runner` container (labeled "DEVELOPMENT ONLY") simulates the execution of `offchain_logic.py` during local development and testing.
+2. The Cartesi Machine Instance (labeled "PRODUCTION EXECUTION") runs the actual verified execution of `offchain_logic.py` in production, inside the validator nodes.
+
+This distinction is important for understanding the system's dual approach to running the order matching algorithm: a simplified simulation for development speed, and a fully verified execution for production security.
