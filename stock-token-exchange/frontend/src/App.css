@@ -387,6 +387,7 @@ button.success:hover:not(:disabled) {
 }
 
 button.danger, button.cancel-button {
+  padding: 0.2rem;
   background-color: var(--danger-color);
 }
 
