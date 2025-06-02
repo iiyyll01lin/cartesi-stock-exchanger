@@ -1,182 +1,827 @@
+# Cartesi Stock Exchange - Docker Compose Configuration
+# 
+# USAGE:
+#   MOCK Mode (development): docker compose --profile mock up
+#   REAL Mode (production):  docker compose --profile real up
+#   Default Mode (mock):     docker compose up
+#   Both Modes (testing):    docker compose --profile mock --profile real up
+#
+# The profiles ensure that the appropriate services are started for each mode:
+# - MOCK mode uses python-runner (Flask server) for simulated Cartesi computation
+# - REAL mode uses cartesi-node + stock-exchange-dapp for actual Cartesi computation
+#
+# Common services like blockchain, deployer, backend, frontend, and cartesi run in both modes.
+
 services:
   # Local Blockchain Node
   blockchain:
-    image: node:18
+    build:
+      context: ./stock-token-exchange/blockchain
+      dockerfile: Dockerfile
     working_dir: /app
     volumes:
-      - ./stock-token-exchange:/app
-    # Install dependencies and start Hardhat node without deploying.
-    # The 'deployer' service handles cleaning and deployment.
-    command: >
-      bash -c "npm install && exec npx hardhat node --no-deploy"
+      - ./stock-token-exchange/deployments:/app/deployments:ro
+      - ./scripts:/app/scripts_global:ro
+      - blockchain-cache:/app/cache
+      - blockchain-artifacts:/app/artifacts
+    command:
+      - /bin/bash
+      - -c
+      - |
+        set -e  # Exit on error
+        
+        echo "Starting simplified blockchain service..."
+        echo "Hardhat dependencies already installed during build"
+        
+        # Quick verification
+        echo "Verifying Hardhat configuration..."
+        if ! npx hardhat --version 2>/dev/null; then
+          echo "WARNING: Hardhat verification failed, but attempting to start anyway..."
+        fi
+        
+        echo "Starting Hardhat node..."
+        exec npx hardhat node --hostname 0.0.0.0 --network hardhat
     ports:
       - "8545:8545"
     networks:
       - stock-exchange-network
-    environment: # Add this environment section
-      - MINT_TEST_TOKENS=true # To make logs less confusing
+    environment:
+      - MINT_TEST_TOKENS=true
+      - NODE_ENV=development
+      - HARDHAT_NETWORK=localhost
+    healthcheck:
+      test: ["CMD", "node", "-e", "const http = require('http'); const req = http.request({hostname: '0.0.0.0', port: 8545, method: 'POST', headers: {'Content-Type': 'application/json'}}, (res) => { res.on('data', () => {}); res.on('end', () => process.exit(0)); }); req.on('error', () => process.exit(1)); req.write('{\"jsonrpc\":\"2.0\",\"method\":\"web3_clientVersion\",\"params\":[],\"id\":1}'); req.end();"]
+      interval: 15s
+      timeout: 15s
+      retries: 8
+      start_period: 300s  # Extended to 5 minutes for npm installation in slow network conditions
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.5'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
 
   # Smart Contract Deployment Service
   deployer:
-    image: node:18
-    working_dir: /app/stock-token-exchange # Set working dir to the project root
+    build:
+      context: ./stock-token-exchange/blockchain
+      dockerfile: Dockerfile
+    working_dir: /app
     volumes:
-      - ./stock-token-exchange:/app/stock-token-exchange # Mount the project dir
-      - ./.env:/app/.env # Mount root .env if needed by hardhat config
-    # Install dependencies, clean cache, wait for blockchain, deploy contracts and update .env
-    command: >
-      bash -c "
-        set -e # Exit immediately if a command exits with a non-zero status.
-        apt-get update && apt-get install -y jq curl && \\
-        echo 'OS dependencies installed.' && \\
-        npm install && \\
-        echo 'Node.js dependencies installed.' && \\
-        npx hardhat clean && \\
-        echo 'Cleaned previous Hardhat artifacts and cache.' && \\
-        echo 'Explicitly clearing contents of deployments/localhost/ before deployment...' && \\
-        mkdir -p deployments/localhost && rm -rf deployments/localhost/* && \\
-        echo '31337' > deployments/localhost/.chainId && \\
-        echo 'Created .chainId file in deployments/localhost/' && \\
-        echo 'Contents of deployments/localhost/ after clearing (should be empty):' && \\
-        ls -l deployments/localhost/ && \\
-        echo 'Waiting for blockchain node to be responsive...' && \\
-        ATTEMPTS=0 && \\
-        MAX_ATTEMPTS=30 && \\
-        while ! curl -sf -X POST --data '{\"jsonrpc\":\"2.0\",\"method\":\"eth_chainId\",\"params\":[],\"id\":1}' -H 'Content-Type: application/json' http://blockchain:8545 > /dev/null; do \
-          ATTEMPTS=$$((ATTEMPTS + 1)) && \
-          if [ $$ATTEMPTS -ge $$MAX_ATTEMPTS ]; then \
-            echo 'Blockchain not responsive after $$MAX_ATTEMPTS attempts. Exiting.' >&2; \
-            exit 1; \
-          fi && \
-          echo 'Blockchain not yet responsive (attempt $$ATTEMPTS/$$MAX_ATTEMPTS), sleeping for 2s...'; \
-          sleep 2; \
-        done && \
-        echo 'Blockchain is responsive.' && \
-        npx hardhat deploy --network localhost && \
-        echo 'Hardhat deployment finished. Attempting to extract addresses...' && \
-        echo 'Listing contents of deployments/localhost/ before jq extraction:' && \
-        ls -l deployments/localhost/ || echo 'Could not list deployments/localhost/' >&2 && \
-        EXCHANGE_ADDRESS=$$(jq -r .address deployments/localhost/Exchange.json 2>/dev/null || echo '') && \
-        TOKEN_ADDRESS=$$(jq -r .address deployments/localhost/StockToken.json 2>/dev/null || echo '') && \
-        if [ -z \"$$EXCHANGE_ADDRESS\" ] || [ \"$$EXCHANGE_ADDRESS\" == \"null\" ] || [ -z \"$$TOKEN_ADDRESS\" ] || [ \"$$TOKEN_ADDRESS\" == \"null\" ]; then \
-          echo 'Error: Failed to extract contract addresses from deployment artifacts.' >&2; \
-          echo 'Attempting to display contents of JSON files (if they exist):' >&2; \
-          echo '--- Exchange.json ---' >&2; \
-          cat deployments/localhost/Exchange.json || echo 'Exchange.json not found or unreadable.' >&2; \
-          echo '--- StockToken.json ---' >&2; \
-          cat deployments/localhost/StockToken.json || echo 'StockToken.json not found or unreadable.' >&2; \
-          exit 1; \
-        fi && \
-        echo \"Extracted Exchange Address: $$EXCHANGE_ADDRESS\" && \
-        echo \"Extracted Token Address: $$TOKEN_ADDRESS\" && \
-        ./update-env.sh --exchange-address \"$$EXCHANGE_ADDRESS\" --token-address \"$$TOKEN_ADDRESS\" && \
-        echo 'Finished updating .env files via update-env.sh.'
-      "
+      - ./stock-token-exchange:/app/stock-token-exchange
+      - ./scripts:/app/scripts_global:ro
+      - ./.env:/app/.env:ro
+      - blockchain-cache:/app/stock-token-exchange/cache
+      - blockchain-artifacts:/app/stock-token-exchange/artifacts
+    command:
+      - /bin/bash
+      - -c
+      - |
+        set -e  # Exit on error
+        
+        echo "=== Starting Enhanced Deployer Service ==="
+        
+        # Use centralized proxy setup
+        source /app/scripts_global/setup-proxy.sh
+        
+        # Enhanced npm configuration for network resilience
+        echo "Configuring npm for enhanced network resilience..."
+        npm config set registry https://registry.npmjs.org/
+        npm config set strict-ssl true
+        npm config set fetch-retry-mintimeout 20000
+        npm config set fetch-retry-maxtimeout 120000
+        npm config set fetch-retries 5
+        npm config set timeout 300000
+        npm config delete proxy 2>/dev/null || true
+        npm config delete https-proxy 2>/dev/null || true
+        
+        # Wait for blockchain to be ready with enhanced retry logic
+        echo "Waiting for blockchain service with enhanced retry logic..."
+        for i in {1..120}; do
+          if curl -s -X POST -H "Content-Type: application/json" \
+             -d '{"jsonrpc":"2.0","method":"web3_clientVersion","params":[],"id":1}' \
+             http://blockchain:8545 >/dev/null 2>&1; then
+            echo "✓ Blockchain is ready (attempt $$i)"
+            break
+          fi
+          if [ $$i -eq 120 ]; then
+            echo "✗ Blockchain not ready after 120 attempts (10 minutes)"
+            exit 1
+          fi
+          if [ $$((i % 15)) -eq 0 ]; then
+            echo "Still waiting for blockchain... ($$i/120) - $$(date)"
+          fi
+          sleep 5
+        done
+        
+        # Clean any existing deployments
+        echo "Cleaning previous deployments..."
+        rm -rf deployments/localhost artifacts/contracts cache/solidity-files-cache.json 2>/dev/null || true
+        
+        # Enhanced dependency verification and installation
+        echo "Verifying and installing dependencies if needed..."
+        for attempt in 1 2 3; do
+          echo "Dependency verification attempt $$attempt/3..."
+          if npm list hardhat ethers @nomicfoundation/hardhat-ethers >/dev/null 2>&1; then
+            echo "✓ All required dependencies verified"
+            break
+          else
+            echo "Installing missing dependencies..."
+            if npm install --timeout=300000 --legacy-peer-deps --maxsockets=1; then
+              echo "✓ Dependencies installed successfully"
+              break
+            else
+              echo "✗ Dependency installation attempt $$attempt failed"
+              if [ $$attempt -eq 3 ]; then
+                echo "WARNING: Some dependencies may be missing, but continuing..."
+                break
+              fi
+              npm cache clean --force
+              sleep 10
+            fi
+          fi
+        done
+        
+        # Cleanup proxy after dependency setup
+        source /app/scripts_global/cleanup-proxy.sh
+        
+        # Compile contracts with retry logic
+        echo "Compiling contracts..."
+        for attempt in 1 2 3; do
+          echo "Contract compilation attempt $$attempt/3..."
+          if npx hardhat compile; then
+            echo "✓ Contract compilation successful"
+            break
+          else
+            echo "✗ Contract compilation attempt $$attempt failed"
+            if [ $$attempt -eq 3 ]; then
+              echo "ERROR: Contract compilation failed after 3 attempts"
+              exit 1
+            fi
+            echo "Cleaning cache and retrying..."
+            rm -rf cache/solidity-files-cache.json artifacts/contracts
+            sleep 5
+          fi
+        done
+        
+        # Deploy contracts with retry logic
+        echo "Deploying contracts..."
+        for attempt in 1 2 3; do
+          echo "Contract deployment attempt $$attempt/3..."
+          if npx hardhat deploy --network localhost; then
+            echo "✓ Contract deployment successful"
+            break
+          else
+            echo "✗ Contract deployment attempt $$attempt failed"
+            if [ $$attempt -eq 3 ]; then
+              echo "ERROR: Contract deployment failed after 3 attempts"
+              exit 1
+            fi
+            echo "Cleaning deployment artifacts and retrying..."
+            rm -rf deployments/localhost
+            sleep 10
+          fi
+        done
+        
+        # Update environment file
+        echo "Updating .env file..."
+        if [ -f "/app/stock-token-exchange/update-env.sh" ]; then
+          cd /app/stock-token-exchange
+          chmod +x ./update-env.sh
+          ./update-env.sh
+          echo "✓ Environment file updated"
+        else
+          echo "Warning: update-env.sh script not found"
+        fi
+        
+        echo "✅ Enhanced Deployment completed successfully"
+    environment:
+      - NODE_ENV=development
+      - BLOCKCHAIN_URL=http://blockchain:8545
+      - HARDHAT_NETWORK=localhost
+      - RUNNING_IN_DOCKER=true
+      - MINT_TEST_TOKENS=true
+    networks:
+      - stock-exchange-network
     depends_on:
       blockchain:
-        condition: service_started
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.3'
+
+  # Test Runner Service - Works with either mode based on activated profile
+  tester:
+    profiles: ["mock", "real", "default"]
+    image: node:18
+    working_dir: /app/stock-token-exchange
+    volumes:
+      - ./stock-token-exchange:/app/stock-token-exchange:ro
+      - ./scripts:/app/scripts:ro
+      - ./.env:/app/.env:ro
+      - blockchain-cache:/app/stock-token-exchange/cache
+      - blockchain-artifacts:/app/stock-token-exchange/artifacts
+    command:
+      - /bin/bash
+      - -c
+      - |
+        set -e  # Exit on error
+        
+        echo "=== Enhanced Test Runner Service Startup ==="
+        
+        # Use centralized proxy setup
+        source /app/scripts/setup-proxy.sh
+
+        echo "Waiting for blockchain to be fully available..."
+        node /app/scripts/wait-for-service.js blockchain 8545 60
+
+        cd /app/stock-token-exchange
+        
+        echo "Installing dependencies with comprehensive retry logic..."
+        
+        # Enhanced npm installation with multiple registry fallback strategies
+        npm config set fetch-retry-mintimeout 20000
+        npm config set fetch-retry-maxtimeout 120000
+        npm config set fetch-retries 5
+        npm config set timeout 300000
+        npm config set maxsockets 1
+        
+        for attempt in 1 2 3 4; do
+          echo "=== npm installation attempt $$attempt/4 ==="
+          case $$attempt in
+            1) echo "Trying with default npm registry..."
+               npm config set registry https://registry.npmjs.org/
+               ;;
+            2) echo "Clearing cache and trying with default registry again..."
+               npm cache clean --force
+               rm -rf node_modules package-lock.json
+               npm config set registry https://registry.npmjs.org/
+               ;;
+            3) echo "Trying with npmmirror registry..."
+               npm cache clean --force
+               rm -rf node_modules package-lock.json
+               npm config set registry https://registry.npmmirror.com/
+               ;;
+            4) echo "Final attempt with taobao registry..."
+               npm cache clean --force
+               rm -rf node_modules package-lock.json
+               npm config set registry https://registry.npm.taobao.org/
+               ;;
+          esac
+          
+          if npm install --timeout=300000 --legacy-peer-deps --no-optional --verbose; then
+            echo "✓ npm installation successful on attempt $$attempt"
+            break
+          else
+            echo "✗ npm installation attempt $$attempt failed"
+            if [ $$attempt -eq 4 ]; then
+              echo "ERROR: All npm installation attempts failed"
+              echo "Attempting critical package installation as final fallback..."
+              npm install --timeout=300000 --legacy-peer-deps hardhat ethers @nomicfoundation/hardhat-ethers || {
+                echo "FATAL: Critical package installation failed"
+                exit 1
+              }
+              echo "✓ Critical packages installed successfully"
+              break
+            fi
+            sleep 15
+          fi
+        done
+        
+        # Reset npm config after installation
+        npm config set registry https://registry.npmjs.org/
+        
+        # Cleanup proxy after installation
+        source /app/scripts/cleanup-proxy.sh
+
+        echo "Checking available accounts on the blockchain..."
+        npx hardhat run --network localhost scripts/list-accounts.js
+
+        echo "Waiting for contract deployment to fully initialize..."
+        sleep 30
+
+        # Detect mode based on running services
+        echo "Detecting running mode..."
+        if node /app/scripts/wait-for-service.js python-runner 5000 5 2>/dev/null; then
+          echo "Detected MOCK mode (python-runner service is running)"
+          export INITIAL_CARTESI_MODE=mock
+        elif node /app/scripts/wait-for-service.js cartesi-node 5005 5 2>/dev/null && node /app/scripts/wait-for-service.js stock-exchange-dapp 5007 5 2>/dev/null; then
+          echo "Detected REAL Cartesi mode (cartesi-node and stock-exchange-dapp are running)"
+          export INITIAL_CARTESI_MODE=real
+        else
+          echo "Warning: Could not detect running mode, defaulting to MOCK mode"
+          export INITIAL_CARTESI_MODE=mock
+        fi
+        echo "Running tests with INITIAL_CARTESI_MODE=$$INITIAL_CARTESI_MODE"
+
+        echo "Running tests..."
+        npx hardhat test --network localhost
+    depends_on:
+      blockchain:
+        condition: service_healthy
+      deployer:
+        condition: service_completed_successfully
     networks:
       - stock-exchange-network
     environment:
-      - HARDHAT_NETWORK=localhost # Ensure deploy script uses localhost
-      - MINT_TEST_TOKENS=true # Mint test tokens to Bob
+      - HARDHAT_NETWORK=localhost
+      - RUNNING_IN_DOCKER=true
+      - NODE_ENV=test
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.3'
 
   # Backend Server (Flask)
   backend:
     build:
-      context: ./stock-token-exchange/backend # Corrected context path
-      dockerfile: Dockerfile
+      context: ./stock-token-exchange/backend
+      dockerfile: Dockerfile.ultra-minimal
     volumes:
-      - ./stock-token-exchange/backend:/app/backend # Mount backend source
-      - ./stock-token-exchange/deployments:/app/deployments # Mount deployments for ABIs
-      - ./.env:/app/.env # Mount the root .env file directly
+      - ./stock-token-exchange/backend:/app/backend  # Direct mount to working directory
+      - ./stock-token-exchange/deployments:/app/deployments:ro
+      - ./.env:/app/.env:ro
+      - ./scripts:/scripts_global:ro  # Add scripts for proxy support
     working_dir: /app/backend
     ports:
       - "5001:5001"
+    command:
+      - /bin/bash
+      - -c
+      - "exec /app/backend/entrypoint-minimal.sh"
     depends_on:
       blockchain:
-        # Ensure blockchain is ready before backend starts
-        condition: service_started # Or service_healthy if healthcheck is added
+        condition: service_healthy
       deployer:
-        # Ensure contracts are deployed and .env updated
-        condition: service_completed_successfully # Wait for deployer script to finish
+        condition: service_completed_successfully
     networks:
       - stock-exchange-network
     secrets:
-      # Define secret usage for backend
       - admin_private_key
     environment:
-      # Pass necessary env vars from the root .env AND override NODE_URL
-      - FLASK_APP=${FLASK_APP:-server.py} # Use from root .env or default
-      - FLASK_DEBUG=${FLASK_DEBUG:-1} # Use from root .env or default
-      - NODE_URL=http://blockchain:8545 # Override NODE_URL for container network
-      - EXCHANGE_CONTRACT_ADDRESS=${EXCHANGE_CONTRACT_ADDRESS} # From root .env (updated by deployer)
-      - STOCK_TOKEN_ADDRESS=${STOCK_TOKEN_ADDRESS} # From root .env (updated by deployer)
-      - ADMIN_PRIVATE_KEY_PATH=/run/secrets/admin_private_key # Path to secret file
-      - MAX_ORDERS_PER_BATCH=${MAX_ORDERS_PER_BATCH:-100} # Use from root .env or default
-      - DEPLOYMENT_PATH=/app/deployments # Tell backend where to find ABIs
+      - FLASK_APP=${FLASK_APP:-server.py}
+      - FLASK_DEBUG=${FLASK_DEBUG:-1}
+      - NODE_URL=http://blockchain:8545
+      - EXCHANGE_CONTRACT_ADDRESS=${EXCHANGE_CONTRACT_ADDRESS}
+      - STOCK_TOKEN_ADDRESS=${STOCK_TOKEN_ADDRESS}
+      - ADMIN_PRIVATE_KEY_PATH=/run/secrets/admin_private_key
+      - MAX_ORDERS_PER_BATCH=${MAX_ORDERS_PER_BATCH:-100}
+      - DEPLOYMENT_PATH=/app/deployments
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped  # Add restart policy to handle transient failures
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.8'
+        reservations:
+          memory: 256M
+          cpus: '0.2'
 
   # Frontend Server (React)
   frontend:
     build:
       context: ./stock-token-exchange/frontend
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.offline
     ports:
       - "3000:3000"
     volumes:
-      - ./stock-token-exchange/frontend:/app # Mount the frontend source code
-      - /app/node_modules # Avoid overwriting node_modules from host
-      # Mount the deployments directory from the root to be accessible by the export script
-      - ./stock-token-exchange/deployments:/app/deployments_src
-      # Mount the frontend scripts directory
-      - ./stock-token-exchange/frontend/scripts:/app/scripts
-      # Mount tsconfig from parent for ts-node
-      - ./stock-token-exchange/tsconfig.json:/app/tsconfig.json
+      - ./stock-token-exchange/frontend:/app  # Writable for development hot reload
+      - frontend-node-modules:/app/node_modules  # Named volume for node_modules
+      - frontend-deployments:/app/src/deployments  # Writable volume for deployment files
+      - ./stock-token-exchange/deployments:/app/deployments_src:ro
+      - ./stock-token-exchange/frontend/scripts:/app/scripts:ro
+      - ./stock-token-exchange/tsconfig.json:/app/tsconfig.json:ro
+      - ./scripts:/scripts_global:ro  # Mount scripts outside /app to avoid read-only conflict
     environment:
       - NODE_ENV=development
       - CHOKIDAR_USEPOLLING=true
       - WATCHPACK_POLLING=true
       - FAST_REFRESH=false
       - REACT_FAST_REFRESH=false
+      - GENERATE_SOURCEMAP=false  # Reduce memory usage
     depends_on:
-      backend: # Ensures backend service has started
+      backend:
         condition: service_started 
-      deployer: # Ensure deployments are completed and .env updated
+      deployer:
         condition: service_completed_successfully
-    # Run the export script first, then start react
-    # Use sh -c to run multiple commands
-    # Use relative paths assuming working_dir is /app
-    command: >
-      sh -c "
-        echo \'--- Ensuring frontend/src/deployments directory exists ---\' &&
-        mkdir -p /app/src/deployments &&
-        echo \'--- Running deployment export script (generate-deployments.js) ---\' && 
-        node ./scripts/generate-deployments.js && 
-        echo \'--- Finished deployment export script ---\' && 
-        npm start
-      "
-    working_dir: /app # Set working directory inside container
+    command:
+      - /bin/bash
+      - -c
+      - |
+        set -e  # Exit on error
+        
+        echo "=== Enhanced Frontend Service Startup ==="
+        
+        # Use centralized proxy setup
+        source /scripts_global/setup-proxy.sh
 
-  # Cartesi Environment (for building/running the machine)
-  cartesi:
-    # Use an image with Cartesi tools
-    image: ${CARTESI_PLAYGROUND_IMAGE:-cartesi/playground:0.5.0}
-    volumes:
-      - ./stock-token-exchange:/app
-      - ./.env:/app/.env
+        echo "--- Ensuring frontend/src/deployments directory exists ---"
+        mkdir -p /app/src/deployments
+        
+        echo "--- Running deployment export script (generate-deployments.js) ---"
+        for attempt in 1 2 3; do
+          echo "Deployment script attempt $$attempt/3..."
+          if node ./scripts/generate-deployments.js; then
+            echo "✓ Deployment script completed successfully"
+            break
+          else
+            echo "✗ Deployment script attempt $$attempt failed"
+            if [ $$attempt -eq 3 ]; then
+              echo "WARNING: All deployment script attempts failed, continuing with frontend startup..."
+              break
+            fi
+            sleep 5
+          fi
+        done
+        echo "--- Finished deployment export script ---"
+
+        # Cleanup proxy after setup
+        source /scripts_global/cleanup-proxy.sh
+
+        echo "Starting React development server..."
+        npm start
     working_dir: /app
-    # Example command: Build the machine then keep container alive
-    command: >
-      bash -c "echo 'Cartesi environment container started.' && \
-               echo 'To build the machine, run: docker-compose exec cartesi bash -c \"cd cartesi-machine && ./build-machine.sh\"' && \
-               echo 'After building, update the template hash with: ./update-env.sh --template-hash YOUR_TEMPLATE_HASH' && \
-               tail -f /dev/null"
     networks:
       - stock-exchange-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.3'
+
+  # Cartesi Environment (for building/running the machine) - Available in both modes
+  cartesi:
+    profiles: ["mock", "real", "default"]
+    image: ${CARTESI_PLAYGROUND_IMAGE:-cartesi/playground:0.5.0}
+    volumes:
+      - ./stock-token-exchange:/app:ro
+      - ./.env:/app/.env:ro
+    working_dir: /app/stock-token-exchange
+    command:
+      - /bin/bash
+      - -c
+      - |
+        echo "Cartesi environment container started."
+        echo ""
+        echo "===== CARTESI MACHINE INSTRUCTIONS ====="
+        echo "To build the machine, run: docker compose exec cartesi bash -c \"cd cartesi-machine && ./build-machine.sh\""
+        echo "After building, update the template hash in .env if needed (e.g., via ./update-env.sh)"
+        echo ""
+        echo "===== RUNNING PROFILES ====="
+        echo "For MOCK mode (Python runner): docker compose --profile mock up"
+        echo "For REAL mode (Cartesi node): docker compose --profile real up" 
+        echo "For both modes (testing): docker compose --profile mock --profile real up"
+        echo ""
+        tail -f /dev/null
+    networks:
+      - stock-exchange-network
+    environment:
+      - CARTESI_ENV_READY=true
+      - BUILD_SUPPORTS_BOTH_MODES=true
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.1'
+
+  # Python Runner Service (for offchain_logic.py) - MOCK MODE
+  python-runner:
+    profiles: ["mock", "default"]
+    build:
+      context: ./stock-token-exchange/cartesi-machine
+      dockerfile: Dockerfile.python_runner
+    ports:
+      - "5000:5000"
+    networks:
+      - stock-exchange-network
+    volumes:
+      # Minimal volume mounts - only essential files as read-only
+      - ./stock-token-exchange/cartesi-machine/offchain_logic.py:/app/offchain_logic.py:ro
+      - ./stock-token-exchange/cartesi-machine/python_runner_server.py:/app/python_runner_server.py:ro
+      - ./stock-token-exchange/cartesi-machine/requirements.txt:/app/requirements.txt:ro
+      - ./scripts:/scripts_global:ro
+    command:
+      - /bin/bash
+      - -c
+      - |
+        set -e  # Exit on error
+        echo "=== Python Runner Startup with Enhanced Proxy Fallback ==="
+        echo "Waiting for network stabilization..."
+        sleep 10
+        
+        # Use centralized proxy setup script with enhanced fallback
+        if [ -f "/scripts_global/setup-proxy.sh" ]; then
+          echo "Using centralized proxy setup..."
+          source /scripts_global/setup-proxy.sh
+        else
+          echo "Centralized proxy setup not found, using manual configuration..."
+          # Fallback to manual proxy detection
+          echo "Testing direct connectivity to PyPI..."
+          if curl -s --max-time 15 --connect-timeout 5 "https://pypi.org/simple" >/dev/null 2>&1; then
+            echo "✓ Direct connectivity works - disabling proxy"
+            unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy
+            export HTTP_PROXY="" HTTPS_PROXY="" http_proxy="" https_proxy="" no_proxy="*"
+          else
+            echo "✗ Direct connectivity failed - checking for proxy configuration"
+            if [ -n "$HTTP_PROXY" ] || [ -n "$http_proxy" ]; then
+              echo "Found proxy configuration - testing with proxy..."
+              PROXY_URL="${HTTP_PROXY:-$http_proxy}"
+              export HTTP_PROXY="$PROXY_URL" HTTPS_PROXY="$PROXY_URL"
+              if curl -s --max-time 20 --connect-timeout 5 "https://pypi.org/simple" >/dev/null 2>&1; then
+                echo "✓ Proxy connectivity works"
+              else
+                echo "✗ Proxy connectivity failed - using direct with extended timeout"
+                unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy
+              fi
+            else
+              echo "No proxy configuration found - proceeding with direct connection"
+            fi
+          fi
+        fi
+
+        echo "Installing Python dependencies with robust error handling..."
+        
+        # Enhanced dependency installation with timeout and retries using network resilience
+        for attempt in 1 2 3 4; do
+          echo "Installation attempt $attempt/4..."
+          case $attempt in
+            1) echo "Standard installation with current proxy settings..."
+               if pip3 install --default-timeout=300 --retries 3 --index-url=https://pypi.org/simple -r requirements.txt; then
+                 echo "✓ Package installation successful with standard PyPI"
+                 break
+               fi ;;
+            2) echo "Trying with alternative PyPI mirror (Douban)..."
+               if pip3 install --default-timeout=300 --retries 3 --index-url=https://pypi.douban.com/simple/ --trusted-host pypi.douban.com -r requirements.txt; then
+                 echo "✓ Package installation successful with Douban mirror"
+                 break
+               fi ;;
+            3) echo "Trying with Alibaba PyPI mirror..."
+               if pip3 install --default-timeout=300 --retries 3 --index-url=https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com -r requirements.txt; then
+                 echo "✓ Package installation successful with Alibaba mirror"
+                 break
+               fi ;;
+            4) echo "Installing packages individually as fallback..."
+               pip3 install --default-timeout=300 --retries 3 flask eth_abi web3 eth_account requests || {
+                 echo "ERROR: All pip installation strategies failed"
+                 exit 1
+               }
+               echo "✓ Individual package installation successful"
+               break ;;
+          esac
+          
+          if [ $attempt -eq 4 ]; then
+            echo "ERROR: All installation attempts failed"
+            exit 1
+          fi
+          sleep 5
+        done
+
+        # Verify critical dependencies
+        echo "Verifying critical dependencies..."
+        python3 -c "import flask, eth_abi, web3, eth_account" || {
+          echo "ERROR: Critical dependencies verification failed"
+          exit 1
+        }
+        echo "✓ All critical dependencies verified"
+
+        # Use centralized proxy cleanup
+        if [ -f "/scripts_global/cleanup-proxy.sh" ]; then
+          source /scripts_global/cleanup-proxy.sh
+        fi
+
+        echo "Starting Python runner server..."
+        exec python python_runner_server.py
+    environment:
+      - FLASK_DEBUG=1
+      - PYTHONUNBUFFERED=1
+      - EXCHANGE_MODE=mock
+      - CARTESI_MODE=development
+      - ABI_DEBUG=${ABI_DEBUG:-false}
+      - TEST_MODE=${TEST_MODE:-unit}
+      - PYTHON_RUNNER_PORT=5000
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      blockchain:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.8'
+        reservations:
+          memory: 256M
+          cpus: '0.2'
+
+  # Cartesi Node Service - REAL CARTESI MODE
+  cartesi-node:
+    profiles: ["real"]
+    image: cartesi/rollups-node:1.5.1
+    volumes:
+      - ./stock-token-exchange/cartesi-machine:/opt/cartesi/dapp:ro
+      - cartesi_node_data:/opt/cartesi/share
+    command:
+      - cartesi-rollups-node
+      - --config
+      - /opt/cartesi/share/config.json
+      - --dapp-contract-address
+      - ${DAPP_CONTRACT_ADDRESS:-0x0000000000000000000000000000000000000000}
+    environment:
+      - CARTESI_LOG_LEVEL=${CARTESI_LOG_LEVEL:-info}
+      - CARTESI_BLOCKCHAIN_RPC_URL=http://blockchain:8545
+      - CARTESI_EPOCH_DURATION=${CARTESI_EPOCH_DURATION:-86400}
+      - CARTESI_BLOCKCHAIN_BLOCK_TIMEOUT=${CARTESI_BLOCKCHAIN_BLOCK_TIMEOUT:-60}
+      - CARTESI_BLOCKCHAIN_ID=${CARTESI_BLOCKCHAIN_ID:-31337}
+      - CARTESI_CONTRACTS_APPLICATION_ADDRESS=${CARTESI_CONTRACTS_APPLICATION_ADDRESS}
+      - CARTESI_CONTRACTS_AUTHORITY_ADDRESS=${CARTESI_CONTRACTS_AUTHORITY_ADDRESS}
+      - CARTESI_CONTRACTS_HISTORY_ADDRESS=${CARTESI_CONTRACTS_HISTORY_ADDRESS}
+      - CARTESI_CONTRACTS_INPUT_BOX_ADDRESS=${CARTESI_CONTRACTS_INPUT_BOX_ADDRESS}
+      - CARTESI_CONTRACTS_PORTAL_ADDRESS=${CARTESI_CONTRACTS_PORTAL_ADDRESS}
+      - CARTESI_CONTRACTS_VOUCHER_ADDRESS=${CARTESI_CONTRACTS_VOUCHER_ADDRESS}
+      - CARTESI_FEATURE_DISABLE_CLAIMER=${CARTESI_FEATURE_DISABLE_CLAIMER:-false}
+      - CARTESI_AUTH_MNEMONIC=${CARTESI_AUTH_MNEMONIC:-test test test test test test test test test test test junk}
+    ports:
+      - "5005:5005"
+      - "5006:5006"
+    networks:
+      - stock-exchange-network
+    depends_on:
+      blockchain:
+        condition: service_healthy
+      deployer:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5005/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.3'
+
+  # Stock Exchange DApp Service - REAL CARTESI MODE
+  stock-exchange-dapp:
+    profiles: ["real"]
+    build:
+      context: ./stock-token-exchange/cartesi-machine
+      dockerfile: Dockerfile.dapp
+    volumes:
+      - ./stock-token-exchange/cartesi-machine:/app:ro
+      - ./scripts:/scripts_global:ro
+    command:
+      - /bin/bash
+      - -c
+      - |
+        set -e  # Exit on error
+        
+        echo "=== Stock Exchange DApp Startup with Enhanced Proxy Support ==="
+        
+        # Use centralized proxy setup
+        source /scripts_global/setup-proxy.sh
+
+        echo "Installing Python dependencies with enhanced retry logic..."
+        
+        # Enhanced pip installation with multiple PyPI mirror fallback
+        for attempt in 1 2 3 4; do
+          echo "Installation attempt $$attempt/4..."
+          case $$attempt in
+            1) echo "Standard installation with PyPI..."
+               if pip3 install --default-timeout=300 --retries 3 --index-url=https://pypi.org/simple -r requirements.txt; then
+                 echo "✓ Package installation successful with standard PyPI"
+                 break
+               fi ;;
+            2) echo "Trying with Douban PyPI mirror..."
+               if pip3 install --default-timeout=300 --retries 3 --index-url=https://pypi.douban.com/simple/ --trusted-host pypi.douban.com -r requirements.txt; then
+                 echo "✓ Package installation successful with Douban mirror"
+                 break
+               fi ;;
+            3) echo "Trying with Alibaba PyPI mirror..."
+               if pip3 install --default-timeout=300 --retries 3 --index-url=https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com -r requirements.txt; then
+                 echo "✓ Package installation successful with Alibaba mirror"
+                 break
+               fi ;;
+            4) echo "Final attempt with individual package installation..."
+               pip3 install --default-timeout=300 --retries 3 requests || {
+                 echo "ERROR: Critical package installation failed"
+                 exit 1
+               }
+               echo "✓ Critical package installation successful"
+               break ;;
+          esac
+          
+          if [ $$attempt -eq 4 ]; then
+            echo "ERROR: All installation attempts failed"
+            exit 1
+          fi
+          sleep 10
+        done
+
+        # Verify critical dependencies
+        echo "Verifying critical dependencies..."
+        python3 -c "import requests" || {
+          echo "ERROR: Critical dependencies missing"
+          exit 1
+        }
+        echo "✓ All dependencies verified"
+
+        # Cleanup proxy after installation
+        source /scripts_global/cleanup-proxy.sh
+
+        echo "Starting Stock Exchange DApp..."
+        exec ./startup.sh
+    environment:
+      - EXCHANGE_MODE=real
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - MAX_TRADES_PER_BATCH=${MAX_TRADES_PER_BATCH:-100}
+      - MIN_TRADE_AMOUNT=${MIN_TRADE_AMOUNT:-1}
+      - MAKER_FEE_BASIS_POINTS=${MAKER_FEE_BASIS_POINTS:-10}
+      - TAKER_FEE_BASIS_POINTS=${TAKER_FEE_BASIS_POINTS:-20}
+      - ROLLUP_HTTP_SERVER_URL=http://cartesi-node:5004
+      - PYTHONUNBUFFERED=1
+      - CARTESI_MODE=real
+    ports:
+      - "5007:5007"
+    networks:
+      - stock-exchange-network
+    depends_on:
+      cartesi-node:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import requests; requests.get('http://localhost:5007/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.8'
+        reservations:
+          memory: 256M
+          cpus: '0.2'
 
 networks:
   stock-exchange-network:
     driver: bridge
+
+volumes:
+  # Shared hardhat volumes for all JavaScript services
+  blockchain-cache:
+    driver: local
+  blockchain-artifacts:
+    driver: local
+  # Frontend node_modules volume to prevent EBUSY errors
+  frontend-node-modules:
+    driver: local
+  # Frontend deployments volume for writable deployment files
+  frontend-deployments:
+    driver: local
+  # Cartesi node data volume
+  cartesi_node_data:
+    driver: local
 
 secrets:
   admin_private_key:
