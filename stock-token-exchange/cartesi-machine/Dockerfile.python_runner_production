@@ -1,0 +1,133 @@
+# Production Dockerfile for Python Runner Service  
+FROM python:3.9-slim AS base
+
+# Build arguments for proxy support
+ARG HTTP_PROXY
+ARG HTTPS_PROXY  
+ARG http_proxy
+ARG https_proxy
+ARG PROXY_URL
+ARG PIP_TIMEOUT=300
+ARG PIP_RETRIES=10
+ARG NO_PROXY=localhost,127.0.0.1
+ARG no_proxy=localhost,127.0.0.1
+
+# Set environment variables for production
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    CARTESI_MODE=production \
+    HTTP_PROXY=$HTTP_PROXY \
+    HTTPS_PROXY=$HTTPS_PROXY \
+    http_proxy=${http_proxy:-$HTTP_PROXY} \
+    https_proxy=${https_proxy:-$HTTPS_PROXY} \
+    PROXY_URL=$PROXY_URL \
+    PIP_TIMEOUT=$PIP_TIMEOUT \
+    PIP_RETRIES=$PIP_RETRIES \
+    NO_PROXY=$NO_PROXY \
+    no_proxy=${no_proxy:-$NO_PROXY}
+
+# Create non-root user for security
+RUN groupadd --system appuser || true && \
+    useradd --system --gid appuser --shell /bin/bash --create-home appuser
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Set working directory
+WORKDIR /app
+
+# Create scripts directory and copy proxy detection scripts and requirements
+RUN mkdir -p ./scripts
+COPY scripts/setup-proxy.sh ./scripts/
+COPY scripts/cleanup-proxy.sh ./scripts/
+COPY stock-token-exchange/cartesi-machine/requirements.txt ./
+
+# Install Python dependencies with intelligent proxy detection and fallback
+RUN set -e && \
+    echo "🔧 Testing network connectivity and proxy configuration..." && \
+    chmod +x ./scripts/setup-proxy.sh ./scripts/cleanup-proxy.sh && \
+    \
+    PROXY_URL="http://10.6.254.210:3128" && \
+    if timeout 10 curl -s --connect-timeout 5 --max-time 10 "$PROXY_URL" >/dev/null 2>&1; then \
+        echo "✓ Proxy $PROXY_URL is accessible, configuring pip to use it"; \
+        pip config set global.proxy "$PROXY_URL"; \
+        pip config set global.trusted-host "pypi.org files.pythonhosted.org pypi.python.org 10.6.254.210"; \
+        export USE_PROXY=true; \
+    else \
+        echo "✗ Proxy not accessible, using direct connection"; \
+        pip config unset global.proxy 2>/dev/null || true; \
+        pip config set global.trusted-host "pypi.org files.pythonhosted.org pypi.python.org"; \
+        export USE_PROXY=false; \
+    fi && \
+    \
+    echo "🔧 Applying enhanced network configuration..." && \
+    pip config set global.timeout 300 && \
+    pip config set global.retries 10 && \
+    pip config set global.index-url "https://pypi.org/simple/" && \
+    \
+    echo "📦 Installing Python packages with proxy-aware fallback..." && \
+    for attempt in 1 2 3; do \
+        echo "Installing requirements.txt (attempt $attempt/3)"; \
+        if pip install --no-cache-dir --timeout 300 --retries 10 --upgrade pip; then \
+            echo "✓ Pip upgrade successful"; \
+        else \
+            echo "⚠️ Pip upgrade failed, continuing with existing version"; \
+        fi; \
+        \
+        if pip install --no-cache-dir --timeout 300 --retries 10 -r requirements.txt; then \
+            echo "✓ Requirements installation successful"; \
+            break; \
+        elif [ $attempt -eq 2 ] && [ "$USE_PROXY" = "true" ]; then \
+            echo "⚠️ Proxy installation failed, trying direct connection..."; \
+            pip config unset global.proxy 2>/dev/null || true; \
+            unset http_proxy https_proxy; \
+            export USE_PROXY=false; \
+        elif [ $attempt -eq 3 ]; then \
+            echo "❌ Requirements installation failed after all attempts"; \
+            exit 1; \
+        fi; \
+        sleep 10; \
+    done && \
+    \
+    echo "📦 Installing gunicorn..." && \
+    for attempt in 1 2 3; do \
+        echo "Installing gunicorn (attempt $attempt/3)"; \
+        if pip install --no-cache-dir --timeout 300 --retries 10 gunicorn; then \
+            echo "✓ Gunicorn installation successful"; \
+            break; \
+        elif [ $attempt -eq 3 ]; then \
+            echo "❌ Gunicorn installation failed after all attempts"; \
+            exit 1; \
+        fi; \
+        sleep 5; \
+    done && \
+    \
+    echo "🧹 Cleaning up proxy configuration..." && \
+    ./scripts/cleanup-proxy.sh 2>/dev/null || true && \
+    echo "🎉 All packages installed successfully!"
+
+# Copy application code
+COPY stock-token-exchange/cartesi-machine/ ./
+
+# Create necessary directories and set permissions
+RUN mkdir -p /app/logs /app/data && \
+    chown -R appuser:appuser /app
+
+# Switch to non-root user
+USER appuser
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:5000/health || exit 1
+
+# Expose port
+EXPOSE 5000
+
+# Production startup command with gunicorn
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--worker-class", "sync", "--timeout", "120", "--keep-alive", "5", "--max-requests", "1000", "--max-requests-jitter", "50", "--preload", "--access-logfile", "-", "--error-logfile", "-", "wsgi:application"]
