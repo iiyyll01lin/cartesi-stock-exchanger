@@ -5,7 +5,7 @@ import { checkConnections } from '../services/blockchain';
 
 interface WalletContextType {
   account: string | null;
-  provider: ethers.providers.Web3Provider | null;
+  provider: ethers.BrowserProvider | null;
   signer: ethers.Signer | null;
   chainId: string | null;
   networkWarning: boolean;

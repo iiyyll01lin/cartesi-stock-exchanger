@@ -7,15 +7,15 @@ import { fetchOrdersFromApi } from './api';
 /**
  * Create a Web3Provider from MetaMask
  */
-export function getProvider(): ethers.providers.Web3Provider | null {
+export function getProvider(): ethers.BrowserProvider | null {
   if (!window.ethereum) return null;
-  return new ethers.providers.Web3Provider(window.ethereum);
+  return new ethers.BrowserProvider(window.ethereum);
 }
 
 /**
  * Check connections and gather diagnostic information
  */
-export async function checkConnections(provider: ethers.providers.Web3Provider | null): Promise<string[]> {
+export async function checkConnections(provider: ethers.BrowserProvider | null): Promise<string[]> {
   const connectionDetails = [];
   
   // Check MetaMask connection

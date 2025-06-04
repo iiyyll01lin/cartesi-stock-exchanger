@@ -1,9 +1,11 @@
 // Balances hook
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { ethers } from 'ethers';
-import { fetchBalances as fetchBalancesFromContract, fetchBalancesFromContracts } from '../services/contracts';
+import { fetchBalancesFromContracts } from '../services/contracts';
 import { fetchUserBalanceFromApi } from '../services/api';
 import { useNotifications } from './useNotifications';
+import { CONTRACT_ADDRESSES } from '../utils/constants';
+import { EXCHANGE_ABI, STOCK_TOKEN_ABI } from '../deployments';
 
 // Debounce helper function
 const debounce = (fn: Function, ms = 1000) => {
@@ -54,52 +56,52 @@ export function useBalances(
       if (tokenContract && exchangeContract) {
         try {
           // Use a direct JsonRpcProvider - most reliable option
-          const provider = new ethers.providers.JsonRpcProvider('http://localhost:8545');
+          const provider = new ethers.JsonRpcProvider('http://localhost:8545');
           
           // Create static contract instances to avoid caching issues
           const staticTokenContract = new ethers.Contract(
-            tokenContract.address, 
-            tokenContract.interface, 
+            CONTRACT_ADDRESSES.token, 
+            STOCK_TOKEN_ABI, 
             provider
           );
           
           const staticExchangeContract = new ethers.Contract(
-            exchangeContract.address,
-            exchangeContract.interface,
+            CONTRACT_ADDRESSES.exchange,
+            EXCHANGE_ABI,
             provider
           );
           
           // Fetch ETH balance
           const ethBalanceBigNumber = await provider.getBalance(account);
-          const ethBalanceFormatted = ethers.utils.formatEther(ethBalanceBigNumber);
+          const ethBalanceFormatted = ethers.formatEther(ethBalanceBigNumber);
           
           // Fetch token balance
           const tokenBalanceBigNumber = await staticTokenContract.balanceOf(account);
-          const tokenBalanceFormatted = ethers.utils.formatEther(tokenBalanceBigNumber);
+          const tokenBalanceFormatted = ethers.formatEther(tokenBalanceBigNumber);
           
           // Fetch exchange ETH balance
           let exchangeEthBigNumber;
           try {
             exchangeEthBigNumber = await staticExchangeContract.getUserEthBalance(account);
           } catch (error) {
-            exchangeEthBigNumber = ethers.BigNumber.from(0);
+            exchangeEthBigNumber = BigInt(0);
           }
-          const exchangeEthFormatted = ethers.utils.formatEther(exchangeEthBigNumber);
+          const exchangeEthFormatted = ethers.formatEther(exchangeEthBigNumber);
           
           // Fetch exchange token balance
           let exchangeTokenBigNumber;
           try {
             console.log("Fetching exchange token balance for:", {
               account,
-              tokenAddress: tokenContract.address
+              tokenAddress: CONTRACT_ADDRESSES.token
             });
-            exchangeTokenBigNumber = await staticExchangeContract.getUserTokenBalance(account, tokenContract.address);
+            exchangeTokenBigNumber = await staticExchangeContract.getUserTokenBalance(account, CONTRACT_ADDRESSES.token);
             console.log("Raw exchange token balance:", exchangeTokenBigNumber.toString());
           } catch (error) {
             console.error("Error fetching exchange token balance:", error);
-            exchangeTokenBigNumber = ethers.BigNumber.from(0);
+            exchangeTokenBigNumber = BigInt(0);
           }
-          const exchangeTokenFormatted = ethers.utils.formatEther(exchangeTokenBigNumber);
+          const exchangeTokenFormatted = ethers.formatEther(exchangeTokenBigNumber);
           console.log("Formatted exchange token balance:", exchangeTokenFormatted);
           
           // Update state - but only if values changed
@@ -176,7 +178,7 @@ export function useBalances(
       if (initialLoadTimeout) clearTimeout(initialLoadTimeout);
       if (pollingInterval) clearInterval(pollingInterval);
     };
-  }, [account, tokenContract?.address, exchangeContract?.address, fetchUserBalances]);
+  }, [account, tokenContract?.target, exchangeContract?.target, fetchUserBalances]);
   
   return {
     ethBalance,

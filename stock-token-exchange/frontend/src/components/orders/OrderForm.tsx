@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { parseEther, formatEther } from 'ethers/lib/utils';
+import { parseEther, formatEther } from 'ethers';
 
 interface OrderFormProps {
   orderType: 'buy' | 'sell';

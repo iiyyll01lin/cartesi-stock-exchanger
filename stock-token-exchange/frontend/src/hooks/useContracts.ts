@@ -1,12 +1,12 @@
 // Contracts hook
 import { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
-import { initializeContracts, validateContracts, fetchTokenDetails } from '../services/contracts';
+import { initializeContracts, validateContracts, getTokenDetails } from '../services/contracts';
 import { useNotifications } from './useNotifications';
 import { CONTRACT_ADDRESSES } from '../utils/constants';
 import { EXCHANGE_ABI, STOCK_TOKEN_ABI } from '../deployments';
 
-export function useContracts(provider: ethers.providers.Web3Provider | null, signer: ethers.Signer | null) {
+export function useContracts(provider: ethers.BrowserProvider | null, signer: ethers.Signer | null) {
   const [exchangeContract, setExchangeContract] = useState<ethers.Contract | null>(null);
   const [stockTokenContract, setStockTokenContract] = useState<ethers.Contract | null>(null);
   const [tokenName, setTokenName] = useState<string>("Stock Token");
@@ -73,8 +73,8 @@ export function useContracts(provider: ethers.providers.Web3Provider | null, sig
         );
         
         console.log("Contracts initialized with addresses:", {
-          exchange: exchangeContract.address,
-          token: tokenContract.address
+          exchange: exchangeContract.target,
+          token: tokenContract.target
         });
         
         // Set the contract instances
@@ -82,7 +82,7 @@ export function useContracts(provider: ethers.providers.Web3Provider | null, sig
         setStockTokenContract(tokenContract);
         
         // Get token details
-        const details = await fetchTokenDetails(tokenContract);
+        const details = await getTokenDetails(tokenContract);
         if (details) {
           setTokenName(details.name);
           setTokenSymbol(details.symbol);

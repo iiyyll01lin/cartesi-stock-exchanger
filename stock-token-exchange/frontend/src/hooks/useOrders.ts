@@ -86,7 +86,7 @@ export function useOrders(
       // First check if the contract is ready by checking a simple property
       try {
         // Use a simpler call like address instead of a function call
-        const contractAddress = await exchangeContract.address;
+        const contractAddress = await exchangeContract.target;
         console.log("Contract is accessible at address:", contractAddress);
       } catch (accessError) {
         console.error("Contract may not be fully initialized:", accessError);
@@ -106,8 +106,8 @@ export function useOrders(
               console.log("Latest order in contract:", {
                 id: orderCount.toString(),
                 user: latestOrder.user,
-                amount: ethers.utils.formatEther(latestOrder.amount),
-                price: ethers.utils.formatEther(latestOrder.price),
+                amount: ethers.formatEther(latestOrder.amount),
+                price: ethers.formatEther(latestOrder.price),
                 active: latestOrder.active,
                 isBuyOrder: latestOrder.isBuyOrder
               });
@@ -210,7 +210,7 @@ export function useOrders(
         
         // Get current ETH balance in the exchange
         const balance = await exchangeContract.ethDeposits(account);
-        const balanceInEth = parseFloat(ethers.utils.formatEther(balance));
+        const balanceInEth = parseFloat(ethers.formatEther(balance));
         
         console.log("ETH Balance Check for Buy Order:", {
           userAddress: account,
@@ -222,10 +222,12 @@ export function useOrders(
           hasEnoughBalance: balanceInEth >= totalCost
         });
         
-        // Add a small safety margin (0.5%) to account for potential rounding issues
-        const safetyMargin = totalCost * 0.005;
-        if (balanceInEth < (totalCost + safetyMargin)) {
-          const errorMsg = `Insufficient ETH in your exchange balance. You need ${totalCost.toFixed(4)} ETH but only have ${balanceInEth.toFixed(4)} ETH. Please deposit slightly more ETH than required to account for potential rounding issues.`;
+        // Add safety margins (0.5% + 0.5% = 1%) to account for potential rounding issues
+        const safetyMargin = totalCost * 0.005; // 0.5% safety margin
+        const additionalBuffer = totalCost * 0.005; // Additional 0.5% buffer
+        const totalWithBuffer = totalCost + safetyMargin + additionalBuffer; // Total 1% buffer
+        if (balanceInEth < totalWithBuffer) {
+          const errorMsg = `Insufficient ETH in your exchange balance. You need ${totalWithBuffer.toFixed(4)} ETH (including 1% buffer) but only have ${balanceInEth.toFixed(4)} ETH. Please deposit slightly more ETH than required to account for potential rounding issues.`;
           addNotification('error', errorMsg);
           return;
         }
@@ -251,7 +253,8 @@ export function useOrders(
         addNotification('info', `Order transaction sent! Waiting for confirmation...`);
         
         // Wait for the transaction to be mined
-        await tx.wait();
+        // Use type assertion to handle ethers v6 typing issue with wait() method
+        await (tx as any).wait();
         
         addNotification('success', `${isBuyOrder ? 'Buy' : 'Sell'} order placed successfully!`);
         
@@ -329,7 +332,8 @@ export function useOrders(
         
         addNotification('info', `Cancel transaction sent! Waiting for confirmation...`);
         
-        await tx.wait();
+        // Use type assertion to handle ethers v6 typing issue with wait() method
+        await (tx as any).wait();
         addNotification('success', `Order #${orderId} cancelled successfully!`);
         
         // Refresh orders

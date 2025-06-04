@@ -7,7 +7,7 @@ import { useNotifications } from './useNotifications';
 
 export function useWallet() {
   const [account, setAccount] = useState<string | null>(null);
-  const [provider, setProvider] = useState<ethers.providers.Web3Provider | null>(null);
+  const [provider, setProvider] = useState<ethers.BrowserProvider | null>(null);
   const [signer, setSigner] = useState<ethers.Signer | null>(null);
   const [chainId, setChainId] = useState<string | null>(null);
   const [networkWarning, setNetworkWarning] = useState<boolean>(false);
@@ -35,9 +35,9 @@ export function useWallet() {
         console.log(`Force reconnected to account: ${currentAccount}`);
         
         // Initialize Ethers with a fresh provider
-        const web3Provider = new ethers.providers.Web3Provider(window.ethereum, "any");
+        const web3Provider = new ethers.BrowserProvider(window.ethereum, "any");
         setProvider(web3Provider);
-        setSigner(web3Provider.getSigner());
+        setSigner(await web3Provider.getSigner());
         
         // Get Network
         try {
@@ -86,14 +86,15 @@ export function useWallet() {
         setAccount(currentAccount);
         addNotification('success', `Wallet connected: ${currentAccount.substring(0, 6)}...${currentAccount.substring(currentAccount.length - 4)}`);
            // Initialize Ethers
-      const web3Provider = new ethers.providers.Web3Provider(window.ethereum);
+      const web3Provider = new ethers.BrowserProvider(window.ethereum);
       setProvider(web3Provider);
-      setSigner(web3Provider.getSigner());
+      const signer = await web3Provider.getSigner();
+      setSigner(signer);
       
       // Get user's ETH balance for immediate display
       try {
         const userBalance = await web3Provider.getBalance(currentAccount);
-        console.log(`User ETH balance from provider: ${ethers.utils.formatEther(userBalance)} ETH`);
+        console.log(`User ETH balance from provider: ${ethers.formatEther(userBalance)} ETH`);
       } catch (balanceError) {
         console.error("Error fetching initial ETH balance:", balanceError);
       }
@@ -120,11 +121,12 @@ export function useWallet() {
                 addNotification('success', 'Successfully connected to Hardhat network');
                 
                 // Give time for the network to stabilize before fetching balances
-                setTimeout(() => {
+                setTimeout(async () => {
                   // Refresh provider and signer
-                  const web3Provider = new ethers.providers.Web3Provider(window.ethereum);
+                  const web3Provider = new ethers.BrowserProvider(window.ethereum);
                   setProvider(web3Provider);
-                  setSigner(web3Provider.getSigner());
+                  const signer = await web3Provider.getSigner();
+                  setSigner(signer);
                   console.log("Provider and signer refreshed after network switch");
                 }, 1000);
               }
@@ -150,7 +152,7 @@ export function useWallet() {
   }, [addNotification]);
   
   // Handle accounts changed
-  const handleAccountsChanged = useCallback((accounts: string[]) => {
+  const handleAccountsChanged = useCallback(async (accounts: string[]) => {
     if (accounts.length === 0) {
       console.log('Please connect to MetaMask.');
       setAccount(null);
@@ -162,7 +164,7 @@ export function useWallet() {
       
       // Update signer if provider exists
       if (provider) {
-        setSigner(provider.getSigner());
+        setSigner(await provider.getSigner());
       }
       
       addNotification('info', `Account changed to ${newAccount.substring(0, 6)}...${newAccount.substring(newAccount.length - 4)}`);
@@ -185,9 +187,9 @@ export function useWallet() {
       setNetworkWarning(false);
       
       // Initialize provider and signer with the current network
-      const web3Provider = new ethers.providers.Web3Provider(window.ethereum);
+      const web3Provider = new ethers.BrowserProvider(window.ethereum);
       setProvider(web3Provider);
-      setSigner(web3Provider.getSigner());
+      web3Provider.getSigner().then(signer => setSigner(signer));
     }
     
     // Don't reload the page - this is causing the contract initialization issues

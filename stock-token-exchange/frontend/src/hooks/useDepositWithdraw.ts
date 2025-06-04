@@ -20,9 +20,9 @@ export function useDepositWithdraw(
       amount, 
       account, 
       exchangeContract: !!exchangeContract,
-      exchangeContractAddress: exchangeContract?.address || 'N/A',
-      signerFromContract: exchangeContract?.signer ? 'YES' : 'NO',
-      providerFromContract: exchangeContract?.provider ? 'YES' : 'NO'
+      exchangeContractAddress: exchangeContract?.target || 'N/A',
+      signerFromContract: exchangeContract?.runner ? 'YES' : 'NO',
+      providerFromContract: exchangeContract?.runner?.provider ? 'YES' : 'NO'
     });
     
     if (!exchangeContract || !account) {
@@ -40,15 +40,14 @@ export function useDepositWithdraw(
       setIsDepositing(true);
       
       // Connect the contract to the current signer explicitly
-      const connectedContract = exchangeContract.connect(exchangeContract.signer);
+      const connectedContract = exchangeContract;
       console.log("Connected contract:", {
-        address: connectedContract.address,
-        hasSigner: !!connectedContract.signer,
-        signerAddress: await connectedContract.signer.getAddress()
+        address: await connectedContract.getAddress(),
+        hasRunner: !!connectedContract.runner
       });
       
       // Convert to Wei
-      const ethAmount = ethers.utils.parseEther(amount);
+      const ethAmount = ethers.parseEther(amount);
       console.log(`Depositing ${amount} ETH (${ethAmount.toString()} wei)`);
       
       // Call the contract with explicit gas limit and value
@@ -59,7 +58,8 @@ export function useDepositWithdraw(
       console.log("Transaction submitted:", tx.hash);
       
       // Wait for confirmation
-      const receipt = await tx.wait();
+      // Use type assertion to handle ethers v6 typing issue with wait() method
+      const receipt = await (tx as any).wait();
       console.log("Transaction confirmed:", receipt);
       
       if (receipt.status === 1) {
@@ -88,13 +88,14 @@ export function useDepositWithdraw(
       setIsWithdrawing(true);
       
       // Convert to Wei
-      const ethAmount = ethers.utils.parseEther(amount);
+      const ethAmount = ethers.parseEther(amount);
       
       // Call the contract
       const tx = await exchangeContract.withdrawETH(ethAmount);
       
       // Wait for confirmation
-      const receipt = await tx.wait();
+      // Use type assertion to handle ethers v6 typing issue with wait() method
+      const receipt = await (tx as any).wait();
       
       if (receipt.status === 1) {
         addNotification('success', `Successfully withdrew ${amount} ETH`);
@@ -122,24 +123,25 @@ export function useDepositWithdraw(
       setIsDepositing(true);
       
       // Convert to token units
-      const tokenAmount = ethers.utils.parseEther(amount);
+      const tokenAmount = ethers.parseEther(amount);
       console.log("Depositing token:", {
         tokenAddress,
         tokenAmount: tokenAmount.toString(),
         amount,
-        exchangeAddress: exchangeContract.address
+        exchangeAddress: await exchangeContract.getAddress()
       });
       
       // First check allowance
-      const allowance = await tokenContract.allowance(account, exchangeContract.address);
-      console.log("Current allowance:", ethers.utils.formatEther(allowance));
+      const allowance = await tokenContract.allowance(account, await exchangeContract.getAddress());
+      console.log("Current allowance:", ethers.formatEther(allowance));
       
       // If allowance is insufficient, approve the exchange
-      if (allowance.lt(tokenAmount)) {
+      if (allowance < tokenAmount) {
         console.log("Setting approval for exchange");
-        const approvalTx = await tokenContract.approve(exchangeContract.address, tokenAmount);
+        const approvalTx = await tokenContract.approve(await exchangeContract.getAddress(), tokenAmount);
         console.log("Approval transaction submitted:", approvalTx.hash);
-        const approvalReceipt = await approvalTx.wait();
+        // Use type assertion to handle ethers v6 typing issue with wait() method
+        const approvalReceipt = await (approvalTx as any).wait();
         console.log("Approval confirmed:", approvalReceipt);
         addNotification('success', 'Token approval successful');
       }
@@ -150,7 +152,8 @@ export function useDepositWithdraw(
         gasLimit: 250000 // Explicit gas limit to avoid estimation errors
       });
       console.log("Deposit transaction submitted:", tx.hash);
-      const receipt = await tx.wait();
+      // Use type assertion to handle ethers v6 typing issue with wait() method
+      const receipt = await (tx as any).wait();
       console.log("Deposit confirmed:", receipt);
 
       if (receipt.status === 1) {
@@ -175,10 +178,11 @@ export function useDepositWithdraw(
     }
     try {
       setIsWithdrawing(true);
-      const tokenAmount = ethers.utils.parseUnits(amount, 18); // Assuming 18 decimals
+      const tokenAmount = ethers.parseUnits(amount, 18); // Assuming 18 decimals
 
       const tx = await exchangeContract.withdrawToken(tokenAddress, tokenAmount);
-      const receipt = await tx.wait();
+      // Use type assertion to handle ethers v6 typing issue with wait() method
+      const receipt = await (tx as any).wait();
 
       if (receipt.status === 1) {
         addNotification('success', `Successfully withdrew ${amount} ${tokenAddress}`); // Assuming tokenAddress is symbol
