@@ -1,0 +1,445 @@
+# Cartesi Stock Exchange - Production Docker Compose Configuration
+#
+# USAGE:
+#   Production Mode: docker compose -f docker-compose.production.yml up
+#   With profiles:   docker compose -f docker-compose.production.yml --profile real up
+#
+# This configuration uses production-ready settings:
+# - Non-root users for security
+# - Resource limits and reservations  
+# - Health checks with appropriate timeouts
+# - Gunicorn for Python services
+# - Nginx for frontend
+# - Proper secrets management
+# - Test accounts preserved for manual testing
+
+networks:
+  stock-exchange-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  blockchain-cache:
+    driver: local
+  blockchain-artifacts:
+    driver: local
+  cartesi_node_data:
+    driver: local
+  nginx-cache:
+    driver: local
+
+secrets:
+  admin_private_key:
+    file: ./secrets/admin_private_key.txt
+
+services:
+  # Local Blockchain Node - Production  
+  blockchain:
+    build:
+      context: ./stock-token-exchange/blockchain
+      dockerfile: Dockerfile.production
+      args:
+        - HTTP_PROXY=http://10.6.254.210:3128
+        - HTTPS_PROXY=http://10.6.254.210:3128
+        - http_proxy=http://10.6.254.210:3128
+        - https_proxy=http://10.6.254.210:3128
+        - PROXY_URL=http://10.6.254.210:3128
+        - NPM_TIMEOUT=${NPM_TIMEOUT:-600000}
+        - NPM_RETRIES=${NPM_RETRIES:-10}        
+        - NO_PROXY=localhost,127.0.0.1
+        - no_proxy=localhost,127.0.0.1
+    working_dir: /app
+    volumes:
+      - ./stock-token-exchange/deployments:/app/deployments:ro
+      - blockchain-cache:/app/cache
+      - blockchain-artifacts:/app/artifacts
+    ports:
+      - "8545:8545"
+      - "8546:8546"
+    networks:
+      - stock-exchange-network
+    environment:
+      - MINT_TEST_TOKENS=true
+      - NODE_ENV=production
+      - HARDHAT_NETWORK=localhost
+      - TEST_TOKEN_AMOUNT=${TEST_TOKEN_AMOUNT:-1000}
+      - HTTP_PROXY=http://10.6.254.210:3128
+      - HTTPS_PROXY=http://10.6.254.210:3128
+      - http_proxy=http://10.6.254.210:3128
+      - https_proxy=http://10.6.254.210:3128
+      - PROXY_URL=http://10.6.254.210:3128
+      - NO_PROXY=localhost,127.0.0.1
+      - no_proxy=localhost,127.0.0.1
+    healthcheck:
+      test: ["CMD", "curl", "-s", "-X", "POST", "-H", "Content-Type: application/json", 
+             "-d", '{"jsonrpc":"2.0","method":"web3_clientVersion","params":[],"id":1}', 
+             "http://localhost:8545"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+  # Contract Deployer - Production
+  deployer:
+    build:
+      context: ./stock-token-exchange
+      dockerfile: deployer/Dockerfile
+      args:
+        - HTTP_PROXY=http://10.6.254.210:3128
+        - HTTPS_PROXY=http://10.6.254.210:3128
+        - http_proxy=http://10.6.254.210:3128
+        - https_proxy=http://10.6.254.210:3128
+        - PROXY_URL=http://10.6.254.210:3128
+        - NPM_TIMEOUT=${NPM_TIMEOUT:-600000}
+        - NPM_RETRIES=${NPM_RETRIES:-10}
+        - NO_PROXY=localhost,127.0.0.1,blockchain
+        - no_proxy=localhost,127.0.0.1,blockchain
+    volumes:
+      - ./stock-token-exchange/deployments:/app/deployments
+      - ./.env:/app/.env
+      - blockchain-cache:/app/cache:ro
+      - blockchain-artifacts:/app/artifacts:ro
+    working_dir: /app
+    networks:
+      - stock-exchange-network
+    environment:
+      - NODE_ENV=production
+      - HARDHAT_NETWORK=localhost
+      - MINT_TEST_TOKENS=true
+      - TEST_TOKEN_AMOUNT=${TEST_TOKEN_AMOUNT:-1000}
+    depends_on:
+      blockchain:
+        condition: service_healthy
+    restart: "no"
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.2'
+
+  # Backend Server - Production (Flask + Gunicorn)
+  backend:
+    build:
+      context: .
+      dockerfile: stock-token-exchange/backend/Dockerfile.production
+      network: host
+      args:
+        - HTTP_PROXY=http://10.6.254.210:3128
+        - HTTPS_PROXY=http://10.6.254.210:3128
+        - http_proxy=http://10.6.254.210:3128
+        - https_proxy=http://10.6.254.210:3128
+        - PROXY_URL=http://10.6.254.210:3128
+        - PIP_TIMEOUT=${PIP_TIMEOUT:-300}
+        - PIP_RETRIES=${PIP_RETRIES:-10}
+        - NO_PROXY=localhost,127.0.0.1,blockchain,cartesi-node
+        - no_proxy=localhost,127.0.0.1,blockchain,cartesi-node
+    volumes:
+      - ./stock-token-exchange/deployments:/app/deployments:ro
+      - ./.env:/app/.env:ro
+    working_dir: /app
+    ports:
+      - "5001:5001"
+    networks:
+      - stock-exchange-network
+    secrets:
+      - admin_private_key
+    environment:
+      - FLASK_APP=wsgi:application
+      - FLASK_ENV=production
+      - FLASK_DEBUG=0
+      - NODE_URL=http://blockchain:8545
+      - EXCHANGE_CONTRACT_ADDRESS=${EXCHANGE_CONTRACT_ADDRESS}
+      - STOCK_TOKEN_ADDRESS=${STOCK_TOKEN_ADDRESS}
+      - ADMIN_PRIVATE_KEY_PATH=/run/secrets/admin_private_key
+      - MAX_ORDERS_PER_BATCH=${MAX_ORDERS_PER_BATCH:-100}
+      - DEPLOYMENT_PATH=/app/deployments
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      blockchain:
+        condition: service_healthy
+      deployer:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.2'
+  # Frontend Server - Production (React + Nginx)
+  frontend:
+    build:
+      context: ./stock-token-exchange/frontend
+      dockerfile: Dockerfile.production
+      args:
+        - HTTP_PROXY=http://10.6.254.210:3128
+        - HTTPS_PROXY=http://10.6.254.210:3128
+        - http_proxy=http://10.6.254.210:3128
+        - https_proxy=http://10.6.254.210:3128
+        - PROXY_URL=http://10.6.254.210:3128
+        - NPM_TIMEOUT=${NPM_TIMEOUT:-600000}
+        - NPM_RETRIES=${NPM_RETRIES:-10}
+        - NO_PROXY=localhost,127.0.0.1,backend,blockchain,cartesi-node
+        - no_proxy=localhost,127.0.0.1,backend,blockchain,cartesi-node
+    volumes:
+      - nginx-cache:/var/cache/nginx
+    ports:
+      - "3000:3000"
+    networks:
+      - stock-exchange-network
+    environment:
+      - NODE_ENV=production
+      - REACT_APP_BACKEND_URL=http://localhost:5001
+      - REACT_APP_BLOCKCHAIN_URL=http://localhost:8545
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      backend:
+        condition: service_healthy
+      deployer:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.3'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
+  # Python Runner Service - Production (MOCK MODE)
+  python-runner:
+    profiles: ["mock", "default"]
+    build:
+      context: .  # Use root context to access scripts directory
+      dockerfile: stock-token-exchange/cartesi-machine/Dockerfile.python_runner_production
+      network: host
+      args:
+        - HTTP_PROXY=http://10.6.254.210:3128
+        - HTTPS_PROXY=http://10.6.254.210:3128
+        - PROXY_URL=http://10.6.254.210:3128
+        - PIP_TIMEOUT=${PIP_TIMEOUT:-300}
+        - PIP_RETRIES=${PIP_RETRIES:-10}
+        - NO_PROXY=localhost,127.0.0.1,blockchain
+    ports:
+      - "5000:5000"
+    networks:
+      - stock-exchange-network
+    volumes:
+      - ./stock-token-exchange/cartesi-machine/offchain_logic.py:/app/offchain_logic.py:ro
+      - ./stock-token-exchange/cartesi-machine/python_runner_server.py:/app/python_runner_server.py:ro
+      - ./stock-token-exchange/cartesi-machine/requirements.txt:/app/requirements.txt:ro
+    environment:
+      - FLASK_ENV=production
+      - FLASK_DEBUG=0
+      - PYTHONUNBUFFERED=1
+      - EXCHANGE_MODE=mock
+      - CARTESI_MODE=production
+      - PYTHON_RUNNER_PORT=5000
+      - TEST_MODE=production
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      blockchain:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+
+  # Cartesi Node - Production (REAL MODE)
+  cartesi-node:
+    profiles: ["real"]
+    image: cartesi/rollups-node:1.0.0
+    restart: unless-stopped
+    environment:
+      - CARTESI_BLOCKCHAIN_ID=${CARTESI_BLOCKCHAIN_ID:-31337}
+      - CARTESI_BLOCKCHAIN_WS_ENDPOINT=ws://blockchain:8545
+      - CARTESI_BLOCKCHAIN_HTTP_ENDPOINT=http://blockchain:8545
+      - CARTESI_LOG_LEVEL=${CARTESI_LOG_LEVEL:-info}
+      - CARTESI_EPOCH_DURATION=${CARTESI_EPOCH_DURATION:-86400}
+      - CARTESI_BLOCKCHAIN_BLOCK_TIMEOUT=${CARTESI_BLOCKCHAIN_BLOCK_TIMEOUT:-60}
+      - CARTESI_FEATURE_DISABLE_CLAIMER=${CARTESI_FEATURE_DISABLE_CLAIMER:-false}
+      - CARTESI_AUTH_MNEMONIC=${CARTESI_AUTH_MNEMONIC}
+      - CARTESI_CONTRACTS_APPLICATION_ADDRESS=${CARTESI_CONTRACTS_APPLICATION_ADDRESS}
+      - CARTESI_CONTRACTS_AUTHORITY_ADDRESS=${CARTESI_CONTRACTS_AUTHORITY_ADDRESS}
+      - CARTESI_CONTRACTS_HISTORY_ADDRESS=${CARTESI_CONTRACTS_HISTORY_ADDRESS}
+      - CARTESI_CONTRACTS_INPUT_BOX_ADDRESS=${CARTESI_CONTRACTS_INPUT_BOX_ADDRESS}
+      - CARTESI_CONTRACTS_PORTAL_ADDRESS=${CARTESI_CONTRACTS_PORTAL_ADDRESS}
+      - CARTESI_CONTRACTS_VOUCHER_ADDRESS=${CARTESI_CONTRACTS_VOUCHER_ADDRESS}
+    volumes:
+      - cartesi_node_data:/var/opt/cartesi
+    ports:
+      - "5005:5005"
+    networks:
+      - stock-exchange-network
+    depends_on:
+      blockchain:
+        condition: service_healthy
+      deployer:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+
+  # Stock Exchange DApp - Production (REAL MODE)
+  stock-exchange-dapp:
+    profiles: ["real"]
+    build:
+      context: ./stock-token-exchange/cartesi-machine
+      dockerfile: Dockerfile.dapp_production
+      args:
+        - HTTP_PROXY=http://10.6.254.210:3128
+        - HTTPS_PROXY=http://10.6.254.210:3128
+        - PROXY_URL=http://10.6.254.210:3128
+        - PIP_TIMEOUT=${PIP_TIMEOUT:-300}
+        - PIP_RETRIES=${PIP_RETRIES:-10}
+        - NO_PROXY=localhost,127.0.0.1,blockchain,cartesi-node
+    ports:
+      - "5007:5007"
+    networks:
+      - stock-exchange-network
+    volumes:
+      - ./stock-token-exchange/cartesi-machine/offchain_logic.py:/app/offchain_logic.py:ro
+      - ./stock-token-exchange/cartesi-machine/health_server.py:/app/health_server.py:ro
+    environment:
+      - ROLLUP_HTTP_SERVER_URL=${ROLLUP_HTTP_SERVER_URL:-http://cartesi-node:5004}
+      - CARTESI_MODE=production
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5007/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      cartesi-node:
+        condition: service_started
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.2'  # Testing Service - Production
+  tester:
+    profiles: ["test"]
+    build:
+      context: ./stock-token-exchange
+      dockerfile: deployer/Dockerfile
+      args:
+        - HTTP_PROXY=http://10.6.254.210:3128
+        - HTTPS_PROXY=http://10.6.254.210:3128
+        - http_proxy=http://10.6.254.210:3128
+        - https_proxy=http://10.6.254.210:3128
+        - PROXY_URL=http://10.6.254.210:3128
+        - NPM_TIMEOUT=${NPM_TIMEOUT:-600000}
+        - NPM_RETRIES=${NPM_RETRIES:-10}
+        - NO_PROXY=localhost,127.0.0.1,blockchain
+        - no_proxy=localhost,127.0.0.1,blockchain
+    volumes:
+      - blockchain-cache:/app/cache:ro
+      - blockchain-artifacts:/app/artifacts:ro
+    working_dir: /app
+    networks:
+      - stock-exchange-network
+    environment:
+      - HARDHAT_NETWORK=localhost
+      - RUNNING_IN_DOCKER=true
+      - NODE_ENV=test
+      - INITIAL_CARTESI_MODE=${INITIAL_CARTESI_MODE:-mock}
+    depends_on:
+      blockchain:
+        condition: service_healthy
+      deployer:
+        condition: service_completed_successfully
+    restart: "no"
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.2'
+
+  # Cartesi Environment - Production
+  cartesi:
+    profiles: ["mock", "real", "default"]
+    image: ${CARTESI_PLAYGROUND_IMAGE:-cartesi/playground:0.5.0}
+    volumes:
+      - ./stock-token-exchange:/app:ro
+      - ./.env:/app/.env:ro
+    working_dir: /app/stock-token-exchange
+    command:
+      - /bin/bash
+      - -c
+      - |
+        echo "Cartesi environment container started."
+        echo ""
+        echo "===== CARTESI MACHINE INSTRUCTIONS ====="
+        echo "To build the machine, run: docker compose exec cartesi bash -c \"cd cartesi-machine && ./build-machine.sh\""
+        echo "After building, update the template hash in .env if needed (e.g., via ./update-env.sh)"
+        echo ""
+        echo "===== PRODUCTION MODE ACTIVE ====="
+        echo "For MOCK mode: docker compose -f docker-compose.production.yml --profile mock up"
+        echo "For REAL mode: docker compose -f docker-compose.production.yml --profile real up" 
+        echo "For testing: docker compose -f docker-compose.production.yml --profile test up"
+        echo ""
+        tail -f /dev/null
+    networks:
+      - stock-exchange-network
+    environment:
+      - CARTESI_ENV_READY=true
+      - BUILD_SUPPORTS_BOTH_MODES=true
+      - NODE_ENV=production
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.1'
