@@ -1,0 +1,38 @@
+# Production requirements for Cartesi Stock Exchange Backend
+# This file contains only the production dependencies without development tools
+
+# Core Framework
+Flask==2.3.3
+Flask-CORS==4.0.0
+
+# WSGI Server for Production
+gunicorn==21.2.0
+
+# Blockchain Integration
+web3==6.11.0
+eth-hash[pycryptodome]==0.5.2
+eth-account==0.9.0
+
+# HTTP Client
+requests==2.31.0
+
+# Utilities
+python-dotenv==1.0.0
+
+# Security
+cryptography==41.0.7
+
+# Performance & Monitoring
+psutil==5.9.6
+
+# JSON handling (faster than built-in)
+ujson==5.8.0
+
+# Memory profiling (optional, for production monitoring)
+memory-profiler==0.61.0
+
+# Logging enhancements
+structlog==23.1.0
+
+# Health checks and metrics
+prometheus-client==0.19.0

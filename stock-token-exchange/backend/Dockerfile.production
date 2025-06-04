@@ -1,0 +1,89 @@
+# Production Dockerfile for Backend Service
+FROM python:3.9-slim AS base
+
+# Build arguments for proxy support
+ARG HTTP_PROXY
+ARG HTTPS_PROXY  
+ARG PROXY_URL
+ARG PIP_TIMEOUT=300
+ARG PIP_RETRIES=10
+ARG NO_PROXY=localhost,127.0.0.1
+
+# Set environment variables for production
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    HTTP_PROXY=$HTTP_PROXY \
+    HTTPS_PROXY=$HTTPS_PROXY \
+    PROXY_URL=$PROXY_URL \
+    PIP_TIMEOUT=$PIP_TIMEOUT \
+    PIP_RETRIES=$PIP_RETRIES \
+    NO_PROXY=$NO_PROXY
+
+# Create non-root user for security
+RUN groupadd --system appuser || true && \
+    useradd --system --gid appuser --shell /bin/bash --create-home appuser
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Set working directory
+WORKDIR /app
+
+# Copy requirements first for better layer caching
+COPY stock-token-exchange/backend/requirements.txt ./
+COPY stock-token-exchange/backend/requirements-prod.txt ./
+
+# Add proxy setup script
+COPY scripts/setup-proxy-fallback.sh /tmp/setup-proxy-fallback.sh
+RUN chmod +x /tmp/setup-proxy-fallback.sh
+
+# Create scripts directory and copy network fallback scripts
+RUN mkdir -p /app/scripts
+COPY scripts/enhanced-network-fallback.sh /app/scripts/
+COPY scripts/setup-proxy.sh /app/scripts/
+COPY scripts/cleanup-proxy.sh /app/scripts/
+
+# Install Python dependencies with proxy fallback
+RUN set -e && \
+    echo "🔧 Setting up proxy fallback mechanisms..." && \
+    /tmp/setup-proxy-fallback.sh && \
+    \
+    echo "📦 Installing dependencies with proxy fallback..." && \
+    pip install --timeout=$PIP_TIMEOUT --retries=$PIP_RETRIES --upgrade pip && \
+    pip install --timeout=$PIP_TIMEOUT --retries=$PIP_RETRIES -r requirements.txt && \
+    pip install --timeout=$PIP_TIMEOUT --retries=$PIP_RETRIES -r requirements-prod.txt || \
+    (echo "Proxy install failed, trying direct..." && \
+     unset HTTP_PROXY HTTPS_PROXY && \
+     pip install --timeout=600 --retries=15 --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org --upgrade pip && \
+     pip install --timeout=600 --retries=15 --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org -r requirements.txt && \
+     pip install --timeout=600 --retries=15 --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org -r requirements-prod.txt)
+
+# Clean up configurations
+RUN echo "🧹 Cleaning up temporary configurations..." && \
+    /app/scripts/cleanup-proxy.sh 2>/dev/null || true
+
+# Copy application code
+COPY stock-token-exchange/backend/ .
+
+# Create necessary directories and set permissions
+RUN mkdir -p /app/logs /app/data && \
+    chown -R appuser:appuser /app
+
+# Switch to non-root user
+USER appuser
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:5001/health || exit 1
+
+# Expose port
+EXPOSE 5001
+
+# Production startup command with gunicorn
+CMD ["gunicorn", "--bind", "0.0.0.0:5001", "--workers", "4", "--worker-class", "sync", "--timeout", "60", "--keep-alive", "5", "--max-requests", "1000", "--max-requests-jitter", "50", "--preload", "--access-logfile", "-", "--error-logfile", "-", "wsgi:app"]

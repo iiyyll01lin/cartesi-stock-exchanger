@@ -2,12 +2,18 @@ FROM python:3.9-slim
 
 WORKDIR /app/backend
 
+# Install system dependencies first
+RUN apt-get update && apt-get install -y \
+    curl \
+    jq \
+    netcat-openbsd \
+    procps \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
 
-# Install additional tools for debugging
-RUN apt-get update && apt-get install -y curl jq
+# Dependencies will be installed at runtime by entrypoint.sh
 
 # Copy the backend code
 COPY . .
