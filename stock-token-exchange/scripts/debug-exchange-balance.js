@@ -31,12 +31,12 @@ async function main() {
     
     // Check token balance in wallet
     const bobWalletBalance = await stockToken.balanceOf(bob.address);
-    console.log(`Bob's wallet token balance: ${ethers.utils.formatEther(bobWalletBalance)} ${symbol}`);
+    console.log(`Bob's wallet token balance: ${ethers.formatEther(bobWalletBalance)} ${symbol}`);
     
     // Check exchange token balance
     try {
       const bobExchangeBalance = await exchange.getUserTokenBalance(bob.address, tokenAddress);
-      console.log(`Bob's exchange token balance: ${ethers.utils.formatEther(bobExchangeBalance)} ${symbol}`);
+      console.log(`Bob's exchange token balance: ${ethers.formatEther(bobExchangeBalance)} ${symbol}`);
       
       // If exchange balance is zero but wallet balance is not, deposit some tokens
       if (bobExchangeBalance.eq(0) && !bobWalletBalance.eq(0)) {
@@ -44,26 +44,26 @@ async function main() {
         
         // Check allowance first
         const allowance = await stockToken.allowance(bob.address, exchangeAddress);
-        console.log(`Current allowance: ${ethers.utils.formatEther(allowance)} ${symbol}`);
+        console.log(`Current allowance: ${ethers.formatEther(allowance)} ${symbol}`);
         
         // Approve if needed
-        if (allowance.lt(ethers.utils.parseEther("100"))) {
+        if (allowance.lt(ethers.parseEther("100"))) {
           console.log("Setting approval for Exchange contract...");
-          const approveTx = await stockToken.connect(bob).approve(exchangeAddress, ethers.utils.parseEther("1000"));
+          const approveTx = await stockToken.connect(bob).approve(exchangeAddress, ethers.parseEther("1000"));
           await approveTx.wait();
           console.log("Approval set! Transaction hash:", approveTx.hash);
         }
         
         // Deposit tokens to exchange
         console.log("Depositing 100 tokens to exchange...");
-        const depositAmount = ethers.utils.parseEther("100");
+        const depositAmount = ethers.parseEther("100");
         const depositTx = await exchange.connect(bob).depositToken(tokenAddress, depositAmount);
         await depositTx.wait();
         console.log("Tokens deposited! Transaction hash:", depositTx.hash);
         
         // Verify the new exchange balance
         const newExchangeBalance = await exchange.getUserTokenBalance(bob.address, tokenAddress);
-        console.log(`Bob's new exchange token balance: ${ethers.utils.formatEther(newExchangeBalance)} ${symbol}`);
+        console.log(`Bob's new exchange token balance: ${ethers.formatEther(newExchangeBalance)} ${symbol}`);
       }
     } catch (error) {
       console.error("Error checking exchange balance:", error);

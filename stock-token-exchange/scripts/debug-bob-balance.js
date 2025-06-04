@@ -8,7 +8,7 @@ async function main() {
     console.log("Starting balance check for Bob...");
     
     // Configure provider
-    const provider = new ethers.providers.JsonRpcProvider("http://localhost:8545");
+    const provider = new ethers.JsonRpcProvider("http://localhost:8545");
     console.log("Provider initialized");
     
     // Bob's address
@@ -40,7 +40,7 @@ async function main() {
     try {
       const balance = await tokenContract.balanceOf(bobAddress);
       console.log(`Raw balance: ${balance.toString()}`);
-      console.log(`Formatted balance: ${ethers.utils.formatUnits(balance, decimals)} ${symbol}`);
+      console.log(`Formatted balance: ${ethers.formatUnits(balance, decimals)} ${symbol}`);
     } catch (balanceError) {
       console.error("Error fetching balance:", balanceError);
       
@@ -50,7 +50,7 @@ async function main() {
       const defaultTokenContract = new ethers.Contract(tokenAddress, tokenAbi, defaultProvider);
       try {
         const defaultBalance = await defaultTokenContract.balanceOf(bobAddress);
-        console.log(`Balance using default provider: ${ethers.utils.formatUnits(defaultBalance, decimals)} ${symbol}`);
+        console.log(`Balance using default provider: ${ethers.formatUnits(defaultBalance, decimals)} ${symbol}`);
       } catch (defaultBalanceError) {
         console.error("Default provider also failed:", defaultBalanceError);
       }
@@ -69,7 +69,7 @@ async function main() {
     try {
       console.log("Checking total supply...");
       const totalSupply = await tokenContract.totalSupply();
-      console.log(`Total supply: ${ethers.utils.formatUnits(totalSupply, decimals)} ${symbol}`);
+      console.log(`Total supply: ${ethers.formatUnits(totalSupply, decimals)} ${symbol}`);
     } catch (supplyError) {
       console.error("Error checking total supply:", supplyError);
     }

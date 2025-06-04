@@ -30,11 +30,11 @@ async function main() {
   
   // Check Bob's balance
   const bobBalance = await stockToken.balanceOf(bobAddress);
-  console.log(`Bob's current balance: ${ethers.utils.formatUnits(bobBalance, decimals)} ${symbol}`);
+  console.log(`Bob's current balance: ${ethers.formatUnits(bobBalance, decimals)} ${symbol}`);
   
   // Check total supply
   const totalSupply = await stockToken.totalSupply();
-  console.log(`Total supply: ${ethers.utils.formatUnits(totalSupply, decimals)} ${symbol}`);
+  console.log(`Total supply: ${ethers.formatUnits(totalSupply, decimals)} ${symbol}`);
   
   // If Bob's balance is 0, mint tokens
   if (bobBalance.eq(0)) {
@@ -45,14 +45,14 @@ async function main() {
       return;
     }
     
-    const mintAmount = ethers.utils.parseUnits("1000", 18); // 1000 tokens
+    const mintAmount = ethers.parseUnits("1000", 18); // 1000 tokens
     const tx = await stockToken.mint(bobAddress, mintAmount);
     console.log(`Mint transaction sent: ${tx.hash}. Waiting for confirmation...`);
     await tx.wait();
     
     // Check new balance
     const newBalance = await stockToken.balanceOf(bobAddress);
-    console.log(`Bob's new balance: ${ethers.utils.formatUnits(newBalance, decimals)} ${symbol}`);
+    console.log(`Bob's new balance: ${ethers.formatUnits(newBalance, decimals)} ${symbol}`);
   }
 }
 

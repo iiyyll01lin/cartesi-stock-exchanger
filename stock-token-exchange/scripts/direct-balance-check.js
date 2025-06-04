@@ -5,7 +5,7 @@ const path = require('path');
 
 async function main() {
   // Configure provider
-  const provider = new ethers.providers.JsonRpcProvider('http://localhost:8545');
+  const provider = new ethers.JsonRpcProvider('http://localhost:8545');
   
   // Get ABI from our fallback file
   const tokenAbiPath = path.join(__dirname, '../frontend/scripts/fallback-abis/token-abi.json');
@@ -29,7 +29,7 @@ async function main() {
   
   // Get Bob's balance
   const balance = await tokenContract.balanceOf(bobAddress);
-  console.log(`Bob's token balance: ${ethers.utils.formatUnits(balance, decimals)} ${symbol}`);
+  console.log(`Bob's token balance: ${ethers.formatUnits(balance, decimals)} ${symbol}`);
   
   // Get connected account
   const accounts = await provider.listAccounts();

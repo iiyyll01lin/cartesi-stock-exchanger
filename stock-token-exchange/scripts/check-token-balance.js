@@ -13,7 +13,7 @@ async function main() {
   
   // Check balance
   const balance = await stockToken.balanceOf(bobAddress);
-  console.log(`Bob's AAPL token balance: ${ethers.utils.formatEther(balance)} AAPL`);
+  console.log(`Bob's AAPL token balance: ${ethers.formatEther(balance)} AAPL`);
   
   // Get the contract name and symbol for verification
   const name = await stockToken.name();
@@ -22,7 +22,7 @@ async function main() {
   
   // Check total supply
   const totalSupply = await stockToken.totalSupply();
-  console.log(`Total supply: ${ethers.utils.formatEther(totalSupply)} ${symbol}`);
+  console.log(`Total supply: ${ethers.formatEther(totalSupply)} ${symbol}`);
 }
 
 main()

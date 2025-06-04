@@ -9,7 +9,7 @@ async function main() {
   console.log("Verifying balance fetching optimization...");
   
   // Connect to local node and get signers
-  const provider = new ethers.providers.JsonRpcProvider("http://localhost:8545");
+  const provider = new ethers.JsonRpcProvider("http://localhost:8545");
   const [deployer, bob] = await ethers.getSigners();
   
   console.log(`Using Bob's address: ${bob.address}`);
@@ -31,7 +31,7 @@ async function main() {
   // 1. Check Bob's token balance
   try {
     const bobBalance = await tokenContract.balanceOf(bob.address);
-    console.log(`Bob's token balance: ${ethers.utils.formatEther(bobBalance)} AAPL`);
+    console.log(`Bob's token balance: ${ethers.formatEther(bobBalance)} AAPL`);
     
     if (bobBalance.eq(0)) {
       console.log("Bob has no tokens. Minting 1000 tokens for testing...");
@@ -43,14 +43,14 @@ async function main() {
       if (tokenOwner === deployer.address) {
         const mintTx = await tokenContract.mint(
           bob.address,
-          ethers.utils.parseEther("1000")
+          ethers.parseEther("1000")
         );
         await mintTx.wait();
         console.log(`Minted 1000 AAPL tokens to Bob (${bob.address})`);
         
         // Verify new balance
         const newBalance = await tokenContract.balanceOf(bob.address);
-        console.log(`Bob's new token balance: ${ethers.utils.formatEther(newBalance)} AAPL`);
+        console.log(`Bob's new token balance: ${ethers.formatEther(newBalance)} AAPL`);
       } else {
         console.log("Deployer is not token owner, cannot mint tokens.");
       }

@@ -20,26 +20,26 @@ async function main() {
     
     // Check balances
     const ethBalance = await exchange.getUserEthBalance(owner.address);
-    console.log("ETH in exchange:", ethers.utils.formatEther(ethBalance));
+    console.log("ETH in exchange:", ethers.formatEther(ethBalance));
     
     const tokenBalance = await exchange.getUserTokenBalance(owner.address, stockToken.address);
-    console.log("Tokens in exchange:", ethers.utils.formatEther(tokenBalance));
+    console.log("Tokens in exchange:", ethers.formatEther(tokenBalance));
     
     // Deposit 1 ETH for testing
     console.log("Depositing 1 ETH...");
-    const depositTx = await exchange.depositETH({ value: ethers.utils.parseEther("1.0") });
+    const depositTx = await exchange.depositETH({ value: ethers.parseEther("1.0") });
     await depositTx.wait();
     console.log("Deposit transaction confirmed");
     
     // Check balance again
     const newEthBalance = await exchange.getUserEthBalance(owner.address);
-    console.log("New ETH in exchange:", ethers.utils.formatEther(newEthBalance));
+    console.log("New ETH in exchange:", ethers.formatEther(newEthBalance));
     
     // Check balances using direct mapping (requires exposing mapping in contract)
     try {
       // This will only work if ethDeposits is public and accessible
       const directEthBalance = await exchange.ethDeposits(owner.address);
-      console.log("Direct access to ethDeposits:", ethers.utils.formatEther(directEthBalance));
+      console.log("Direct access to ethDeposits:", ethers.formatEther(directEthBalance));
     } catch (error) {
       console.log("Could not directly access ethDeposits (normal if it's private)");
     }

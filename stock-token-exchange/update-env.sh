@@ -129,7 +129,7 @@ if [ -n "$TEMPLATE_HASH" ]; then
     update_env_file "$ROOT_ENV_FILE" "CARTESI_TEMPLATE_HASH" "$TEMPLATE_HASH"
 fi
 
-# Update root .env file with contract addresses (for backend to source via docker-compose)
+# Update root .env file with contract addresses (for backend to source via docker compose)
 if [ -n "$EXCHANGE_ADDRESS" ]; then
     update_env_file "$ROOT_ENV_FILE" "EXCHANGE_CONTRACT_ADDRESS" "$EXCHANGE_ADDRESS"
 fi
