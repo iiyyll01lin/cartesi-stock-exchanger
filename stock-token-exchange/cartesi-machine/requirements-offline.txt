@@ -1,0 +1,21 @@
+# Offline fallback requirements - use if online installation fails
+# Pre-downloaded wheels should be placed in ./wheels/ directory
+
+# Core packages with specific versions that work
+flask==2.3.2
+requests==2.31.0
+eth-abi==4.2.1
+web3==6.9.0
+eth-account==0.9.0
+
+# Dependencies (if needed to install manually)
+# werkzeug==2.3.6
+# click==8.1.6
+# itsdangerous==2.1.2
+# jinja2==3.1.2
+# markupsafe==2.1.3
+# urllib3==2.0.4
+# certifi==2023.7.22
+# charset-normalizer==3.2.0
+# idna==3.4
+

@@ -1,0 +1,30 @@
+{
+  "exchange_mode": "real",
+  "log_level": "INFO",
+  "max_trades_per_batch": 100,
+  "min_trade_amount": "1",
+  "fees": {
+    "maker_fee_basis_points": 10,
+    "taker_fee_basis_points": 20
+  },
+  "_comment": {
+    "description": "Optional configuration file for Cartesi Stock Exchange",
+    "usage": "Copy this file to config.json to override environment variables",
+    "exchange_mode": "Set to 'mock' for development or 'real' for production",
+    "log_level": "One of: DEBUG, INFO, WARNING, ERROR, CRITICAL",
+    "max_trades_per_batch": "Maximum number of trades to process in a single batch",
+    "min_trade_amount": "Minimum trade amount (string or number)",
+    "fees": {
+      "maker_fee_basis_points": "Fee for maker orders in basis points (100 bps = 1%)",
+      "taker_fee_basis_points": "Fee for taker orders in basis points (100 bps = 1%)"
+    }
+  },
+  "advanced": {
+    "cartesi_config": {
+      "ram_length": "128Mi",
+      "rollup_enabled": true,
+      "max_mcycle": 0
+    },
+    "_comment": "Advanced settings - modify only if you know what you're doing"
+  }
+}
