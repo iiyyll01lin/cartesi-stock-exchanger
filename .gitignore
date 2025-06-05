@@ -46,3 +46,16 @@ temp/
 .Trashes
 ehthumbs.db
 Thumbs.db
+stock-token-exchange/artifacts/
+stock-token-exchange/cache/
+stock-token-exchange/build/
+stock-token-exchange/typechain-types/
+stock-token-exchange/__pycache__/
+stock-token-exchange/venv/
+**/__pycache__/
+*.pyc
+.vscode/
+*.backup
+*.v5.backup
+*.bak
+*.with_bom

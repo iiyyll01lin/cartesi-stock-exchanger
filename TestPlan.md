@@ -68,7 +68,7 @@ This approach solves the blockchain scalability issue by moving the complex orde
 | Test Function | Implementation Status | Reason | Implementation Details |
 |---------------|----------------------|--------|------------------------|
 | Full Trade Flow (Alice & Bob) | ✅ Pass | Implemented in UI-TEST-FLOW.md as a test procedure | `/UI-TEST-FLOW.md` provides a complete test flow covering all aspects of trading |
-| Docker Compose Setup | ✅ Pass | Implemented in docker-compose.yml | `/docker-compose.yml` defines all necessary services (blockchain, backend, frontend, Cartesi) |
+| Docker Compose Setup | ✅ Pass | Implemented in docker compose.yml | `/docker compose.yml` defines all necessary services (blockchain, backend, frontend, Cartesi) |
 | Contract Deployment | ✅ Pass | Implemented in deploy scripts | `/stock-token-exchange/deploy/01_deploy_contracts.ts` deploys contracts with proper configuration |
 
 ## 3. Summary

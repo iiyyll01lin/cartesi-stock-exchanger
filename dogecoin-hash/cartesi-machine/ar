@@ -1,2 +1,0 @@
-#!/bin/bash
-/opt/riscv/riscv64-cartesi-linux-gnu/bin/riscv64-cartesi-linux-gnu-ar "$@"

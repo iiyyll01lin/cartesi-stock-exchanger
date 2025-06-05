@@ -5,7 +5,7 @@ This document provides a step-by-step guide for testing the Stock Token Exchange
 ## Prerequisites
 
 - Docker and Docker Compose are installed and running
-- The application is running via `docker-compose up --build -d`
+- The application is running via `docker compose up --build -d`
 - MetaMask browser extension is installed and configured
 
 ## Test Flow
@@ -134,7 +134,7 @@ If you encounter issues during testing:
 3. Ensure MetaMask is connected to the correct network (Localhost 8545)
 4. Check Docker Compose logs for any backend/contract errors:
    ```bash
-   docker-compose logs -f backend
+   docker compose logs -f backend
    ```
 
 ## Test Result Validation

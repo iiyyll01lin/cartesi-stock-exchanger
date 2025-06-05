@@ -1,12 +1,25 @@
 # Stock Token Exchange with Cartesi
 
-This project implements a decentralized stock token exchange leveraging Cartesi for verifiable off-chain computation.
+This project implements a decentralized stock token exchange leveraging Cartesi for verifiable off-chain computation. The system supports both **MOCK mode** (for development/testing) and **REAL mode** (for production with actual Cartesi infrastructure) via Docker Compose profiles.
 
 > **⚠️ IMPORTANT:** Docker permissions are required to run this project. Make sure you either run the scripts with `sudo` or add your user to the docker group with `sudo usermod -aG docker $USER` (requires logout/login to take effect).
 
 ## Overview
 
-The exchange allows users to deposit ETH and specific stock tokens (like AAPL, represented as ERC20) into a smart contract. Buy and sell orders are placed on-chain, locking the necessary funds. The complex task of matching these orders is delegated to a Cartesi Machine, which runs a Python script (`offchain_logic.py`) implementing a price-time priority matching algorithm. Once the Cartesi computation is complete and finalized, an authorized admin triggers an on-chain function to process the results, updating user balances and order statuses according to the matched trades verified by Cartesi Compute.
+The exchange allows users to deposit ETH and specific stock tokens (like AAPL, represented as ERC20) into a smart contract. Buy and sell orders are placed on-chain, locking the necessary funds. The complex task of matching these orders is delegated to either:
+
+* **MOCK Mode**: A Python Flask server (`python-runner`) that simulates Cartesi logic for rapid development
+* **REAL Mode**: Actual Cartesi infrastructure (`cartesi-node` + `stock-exchange-dapp`) for production-ready verifiable computation
+
+The system runs a Python script (`offchain_logic.py`) implementing a price-time priority matching algorithm. Once the computation is complete, an authorized admin triggers an on-chain function to process the results, updating user balances and order statuses.
+
+## Deployment Modes
+
+The project uses Docker Compose profiles to support different deployment scenarios:
+
+* **MOCK Mode (Development)**: `docker compose --profile mock up` or `docker compose up`
+* **REAL Mode (Production)**: `docker compose --profile real up`  
+* **Both Modes (Testing)**: `docker compose --profile mock --profile real up`
 
 ## Frontend Design
 
@@ -16,207 +29,372 @@ The exchange allows users to deposit ETH and specific stock tokens (like AAPL, r
 
 ![arch-ppt](./arch-ppt.png)
 
-## Docker Container Architecture with simulated python-runner
+## Docker Container Architecture with Profile-Based Deployment
 
-The following diagram illustrates the roles of the different Docker containers defined in `docker-compose.yml` and how they interact:
+The system uses Docker Compose profiles to support different deployment modes. The following diagram illustrates the containers and their roles:
 
 ```mermaid
 graph TD
     User["User (Browser + MetaMask)"]
 
-    subgraph "Runtime Docker Containers"
-        F[("frontend"<br>React UI - Port 3000)]
-        B[("backend"<br>Flask API - Port 5001)]
-        BC[("blockchain"<br>Hardhat Node - Port 8545)]
+    subgraph "Core Services (Always Running)"
+        BC["blockchain<br>Hardhat Node - Port 8545<br>With Health Checks"]
+        F["frontend<br>React UI - Port 3000<br>Connects to MetaMask"]
+        B["backend<br>Flask API - Port 5001<br>Admin Functions"]
     end
 
-    subgraph "Build/Test Docker Containers (Run to completion or for development)"
-        D[("deployer"<br>Deploys Smart Contracts)]
-        T[("tester"<br>Runs Automated Tests)]
-        C[("cartesi"<br>Builds Cartesi Machine Template)]
-        PR[("python-runner"<br>Tests Off-chain Logic - Port 5000)]
+    subgraph "Deployment Services (Run to Completion)"
+        D["deployer<br>Deploys Smart Contracts<br>Updates .env"]
     end
 
-    User -- HTTP --> F
-    User -- Blockchain RPC (MetaMask) --> BC
+    subgraph "Testing Services (On Demand)"
+        T["tester<br>Runs Automated Tests<br>Profiles: mock, real, default"]
+    end
+
+    subgraph "MOCK Mode Services (Profile: mock, default)"
+        PR["python-runner<br>Flask Server - Port 5000<br>Simulates Cartesi Logic"]
+    end
+
+    subgraph "REAL Mode Services (Profile: real)"
+        CN["cartesi-node<br>Cartesi Rollups Node - Port 5005<br>GraphQL Port 5006"]
+        DAPP["stock-exchange-dapp<br>Cartesi DApp - Port 5007<br>Runs offchain_logic.py"]
+    end
+
+    subgraph "Utility Services (Available in All Modes)"
+        C["cartesi<br>Cartesi Environment<br>Machine Building"]
+    end
+
+    subgraph "Persistent Volumes"
+        BLC["blockchain-cache<br>Hardhat Compiler Cache"]
+        BLA["blockchain-artifacts<br>Compiled Contract Artifacts"]
+        CND["cartesi_node_data<br>Cartesi Node Storage"]
+    end
+
+    subgraph "Configuration & Secrets"
+        ENV[".env File<br>Contract Addresses & Config"]
+        SEC["Docker Secrets<br>admin_private_key"]
+    end
+
+    User -- HTTPS --> F
+    User -- MetaMask RPC --> BC
 
     F -- API Calls --> B
-    B -- Smart Contract Calls --> BC
+    F -- Contract Calls (MetaMask) --> BC
+    B -- Contract Calls --> BC
+    B -- Admin Functions --> SEC
 
-    D -- Deploys to --> BC
-    D -- Updates config --> SharedEnv[(.env file on host)]
-    SharedEnv -- Read by --> F
-    SharedEnv -- Read by --> B
-    SharedEnv -- Read by --> C
-    SharedEnv -- Read by --> PR
+    D -- Deploys Contracts --> BC
+    D -- Updates --> ENV
+    D -- Uses Cache --> BLC
+    D -- Uses Artifacts --> BLA
 
+    T -- Tests Against --> BC
+    T -- Uses Cache --> BLC
+    T -- Uses Artifacts --> BLA
 
-    T -- Tests against --> BC
+    %% MOCK Mode Flow
+    T -- Tests Offchain Logic --> PR
+    B -- Simulated Cartesi Calls --> PR
 
-    C -.->|Outputs Template Hash for| D
-    PR -.->|Provides Python logic for| C
+    %% REAL Mode Flow  
+    BC -- Cartesi Inputs --> CN
+    CN -- Runs DApp --> DAPP
+    DAPP -- Executes --> OL["offchain_logic.py"]
+    CN -- Stores Data --> CND
+    CN -- Outputs to --> BC
 
+    BC -- Uses Cache --> BLC
+    BC -- Uses Artifacts --> BLA
 
-    classDef runtime fill:#D6EAF8,stroke:#2980B9,stroke-width:2px;
-    classDef buildtest fill:#E8DAEF,stroke:#8E44AD,stroke-width:2px;
+    ENV -- Read by --> F
+    ENV -- Read by --> B
+    ENV -- Read by --> C
+    ENV -- Read by --> PR
+    ENV -- Read by --> CN
+    ENV -- Read by --> DAPP
+
+    classDef core fill:#D6EAF8,stroke:#2980B9,stroke-width:2px;
+    classDef mock fill:#E8DAEF,stroke:#8E44AD,stroke-width:2px;
+    classDef real fill:#D5F5E3,stroke:#27AE60,stroke-width:2px;
+    classDef deployment fill:#FCF3CF,stroke:#F39C12,stroke-width:2px;
+    classDef storage fill:#FADBD8,stroke:#E74C3C,stroke-width:2px;
     classDef user fill:#FDEDEC,stroke:#E74C3C,stroke-width:2px;
-    classDef config fill:#FCF3CF,stroke:#F39C12,stroke-width:2px;
 
     class User user;
-    class F,B,BC runtime;
-    class D,T,C,PR buildtest;
-    class SharedEnv config;
+    class BC,F,B core;
+    class PR mock;
+    class CN,DAPP real;
+    class D deployment;
+    class T deployment;
+    class C deployment;
+    class BLC,BLA,CND,ENV,SEC storage;
 ```
 
 **Key Container Roles & Interactions:**
 
-*   **Runtime Containers:**
-    *   `blockchain`: Runs the local Hardhat Ethereum node.
-    *   `backend`: The Flask API server that interacts with the `blockchain` for data and administrative tasks (like triggering Cartesi computations).
-    *   `frontend`: The React-based user interface that users interact with. It communicates with the `backend` API and directly with the `blockchain` via MetaMask for transactions.
-*   **Build/Test Containers:**
-    *   `deployer`: Responsible for deploying the smart contracts to the `blockchain` service. It also updates the shared `.env` file with contract addresses.
-    *   `tester`: Executes automated tests (e.g., Hardhat tests) against the contracts deployed on the `blockchain`.
-    *   `cartesi`: Provides an environment (using `cartesi/playground`) to build the Cartesi machine template from `offchain_logic.py`. The resulting template hash is used by the `deployer` (and subsequently the `Exchange.sol` contract).
-    *   `python-runner`: A development service running a Flask server to test the `offchain_logic.py` script independently, simulating how it might behave within a Cartesi machine. This container only runs during development/testing, while in production, the off-chain logic is executed inside the Cartesi Machine Instance run by validator nodes.
-*   **Shared Configuration (`.env` file):**
-    *   This file, located at the project root and mounted into relevant containers, stores crucial configuration like deployed contract addresses and Cartesi template hashes. The `deployer` service updates it, and other services (`backend`, `frontend`, `cartesi`, `python-runner`) read from it.
+* **Core Services (Always Running):**
+  * `blockchain`: Runs the local Hardhat Ethereum node with health checks. Uses persistent volumes for caching and artifacts. Supports proxy configuration for downloading Solidity compilers.
+  * `frontend`: React-based user interface that connects to MetaMask and communicates with the backend API. Reads contract addresses from `.env` file.
+  * `backend`: Flask API server that handles admin functions and blockchain interactions. Uses Docker secrets for secure private key management.
 
-This setup allows for a modular development and deployment process, where each component can be managed and scaled independently.
+* **Deployment Services (Run to Completion):**
+  * `deployer`: Deploys smart contracts to the blockchain and updates the `.env` file with contract addresses. Includes BOM removal and compilation steps.
 
-## Overall System Architecture including Cartesi Validators
+* **Testing Services (On Demand):**
+  * `tester`: Executes automated tests against deployed contracts. Automatically detects whether to run in MOCK or REAL mode based on available services. Uses profiles for different deployment scenarios.
 
-The following diagram expands on the Docker container architecture to include the conceptual Cartesi validator nodes responsible for executing the off-chain computation.
+* **MOCK Mode Services (Profiles: mock, default):**
+  * `python-runner`: Flask server that simulates Cartesi logic execution. Provides HTTP endpoints for testing `offchain_logic.py` without full Cartesi infrastructure. Includes comprehensive test files and health checks.
+
+* **REAL Mode Services (Profile: real):**
+  * `cartesi-node`: Official Cartesi Rollups node that handles the actual Cartesi computation infrastructure. Connects to the blockchain and manages Cartesi machine execution.
+  * `stock-exchange-dapp`: Cartesi DApp service that runs the actual `offchain_logic.py` script in production mode. Communicates with the Cartesi node and processes real order matching.
+
+* **Utility Services (Available in All Modes):**
+  * `cartesi`: Cartesi environment container for building machine templates. Provides instructions and tools for Cartesi development.
+
+* **Persistent Volumes:**
+  * `blockchain-cache`: Stores Hardhat's cache including downloaded Solidity compiler binaries (shared across blockchain, deployer, tester).
+  * `blockchain-artifacts`: Stores compiled contract artifacts (shared across blockchain, deployer, tester).
+  * `cartesi_node_data`: Stores Cartesi node data for the REAL mode implementation.
+
+* **Configuration & Security:**
+  * `.env` file: Contains contract addresses, network configuration, and proxy settings. Updated by deployer and read by all services.
+  * Docker secrets: Secure storage for admin private keys used by the backend service.
+
+## Network and Proxy Configuration
+
+The project includes intelligent proxy handling for corporate environments that require HTTP proxies for external network access. Each service in the docker-compose.yml uses centralized proxy scripts (`scripts/setup-proxy.sh` and `scripts/cleanup-proxy.sh`) for consistent proxy management across all containers.
+
+### Profile-Based Service Architecture
+
+The system uses Docker Compose profiles to support different deployment modes:
+
+* **MOCK Mode (Profile: mock, default)**: Uses `python-runner` service to simulate Cartesi logic
+* **REAL Mode (Profile: real)**: Uses actual Cartesi infrastructure (`cartesi-node` + `stock-exchange-dapp`)
+* **Mixed Mode**: Both profiles can run simultaneously for testing and comparison
+
+### Data Flow by Mode
 
 ```mermaid
 graph TD
     User["User/Developer"]
 
-    subgraph "Local Development & Build Environment (docker-compose.yml)"
-        F[("frontend"<br>React UI)]
-        B[("backend"<br>Flask API)]
-        BC[("blockchain"<br>Hardhat Node)]
-        D[("deployer"<br>Deploys Contracts)]
-        T[("tester"<br>Runs Tests)]
-        CE[("cartesi-env"<br>Builds Cartesi Machine Template)]
-        PR[("python-runner"<br>Simulates Off-chain Logic)]
+    subgraph "Core Services (Always Running)"
+        F[("frontend"<br>React UI - Port 3000)]
+        B[("backend"<br>Flask API - Port 5001)]
+        BC[("blockchain"<br>Hardhat Node - Port 8545)]
+        D[("deployer"<br>Contract Deployment)]
+        T[("tester"<br>Automated Testing)]
+        C[("cartesi"<br>Machine Building)]
     end
 
-    subgraph "Conceptual Cartesi Off-Chain Network"
-        subgraph "Validator Nodes"
+    subgraph "MOCK Mode Flow (Profile: mock)"
+        PR["python-runner<br>Flask Server - Port 5000<br>Simulates Cartesi Logic"]
+        OL1["offchain_logic.py<br>Direct Python Execution"]
+    end
+
+    subgraph "REAL Mode Flow (Profile: real)"
+        CN["cartesi-node<br>Rollups Node - Ports 5005/5006"]
+        DAPP["stock-exchange-dapp<br>DApp Service - Port 5007"]
+        CM["Cartesi Machine Instance"]
+        OL2["offchain_logic.py<br>Verifiable Execution"]
+    end
+
+    subgraph "Conceptual Production Network"
+        subgraph "Cartesi Validator Network"
             CV1["Cartesi Validator 1"]
-            CV2["Cartesi Validator 2"]
+            CV2["Cartesi Validator 2"]  
             CVn["Cartesi Validator N"]
         end
-        CM["Cartesi Machine Instance<br>(executes offchain_logic.py)"]
     end
-    
-    OL[("offchain_logic.py<br>Order Matching Script")]
-
 
     User -- Browser --> F
-    User -- Admin/Dev Tasks (API/CLI) --> B
-    User -- Dev Tasks (CLI for contracts) --> D
-    User -- Dev Tasks (CLI for tests) --> T
-    User -- Dev Tasks (CLI to build machine template) --> CE
-    User -- Dev Tasks (CLI to test offchain_logic.py) --> PR
-
+    User -- MetaMask --> BC
+    User -- Admin/Dev Tasks --> B
+    User -- Testing --> T
+    
     F -- HTTP API Calls --> B
     F -- Blockchain RPC (via MetaMask) --> BC
+    B -- Blockchain RPC --> BC
+    D -- Deploys Contracts --> BC
+    T -- Tests Against --> BC
+    C -- Builds Machine Template --> OL1
+    C -- Builds Machine Template --> OL2
 
-    B -- Blockchain RPC (Contract Calls, e.g., trigger computation) --> BC
+    %% MOCK Mode Data Flow
+    B -- Simulated Cartesi Calls --> PR
+    T -- Tests Offchain Logic --> PR
+    PR -- Executes --> OL1
+    PR -- Returns Results --> B
 
-    D -- Deploys Contracts to --> BC
-    D -- Updates config --> SharedEnv[(.env file on host)]
+    %% REAL Mode Data Flow (Local Development)
+    BC -- Cartesi Inputs --> CN
+    CN -- Runs DApp --> DAPP
+    DAPP -- Executes --> CM
+    CM -- Contains --> OL2
+    CN -- Returns Results --> BC
 
-    T -- Tests against --> BC
+    %% REAL Mode Data Flow (Production Concept)
+    BC -.- CV1
+    BC -.- CV2
+    BC -.- CVn
+    CV1 -- Consensus --> CN
+    CV2 -- Consensus --> CN
+    CVn -- Consensus --> CN
 
-    CE -- Builds template containing --> OL
-    CE -.-> D
-    CE -- "Outputs Machine Template Hash (used by D)" --> D
-
-    PR -- Simulates execution of --> OL
-
-
-    BC -- Computation Request Event (via Exchange Contract) --> CV1
-    BC -- Computation Request Event (via Exchange Contract) --> CV2
-    BC -- Computation Request Event (via Exchange Contract) --> CVn
-
-    CV1 -- Instantiates & Runs --> CM
-    CV2 -- Instantiates & Runs --> CM
-    CVn -- Instantiates & Runs --> CM
-    
-    CM -- Contains & Executes --> OL
-
-    CM -- Computation Result --> CV1
-    CM -- Computation Result --> CV2
-    CM -- Computation Result --> CVn
-
-    CV1 -- Submits Result to Exchange Contract on --> BC
-    CV2 -- Submits Result to Exchange Contract on --> BC
-    CVn -- Submits Result to Exchange Contract on --> BC
-
-    SharedEnv -- Read by --> F
+    SharedEnv[(.env Configuration)] -- Read by --> F
     SharedEnv -- Read by --> B
-    SharedEnv -- Read by --> CE
+    SharedEnv -- Read by --> C
     SharedEnv -- Read by --> PR
+    SharedEnv -- Read by --> CN
+    SharedEnv -- Read by --> DAPP
 
-    classDef runtime fill:#D6EAF8,stroke:#2980B9,stroke-width:2px;
-    classDef buildtest fill:#E8DAEF,stroke:#8E44AD,stroke-width:2px;
+    classDef core fill:#D6EAF8,stroke:#2980B9,stroke-width:2px;
+    classDef mock fill:#E8DAEF,stroke:#8E44AD,stroke-width:2px;
+    classDef real fill:#D5F5E3,stroke:#27AE60,stroke-width:2px;
+    classDef deployment fill:#FCF3CF,stroke:#F39C12,stroke-width:2px;
     classDef user fill:#FDEDEC,stroke:#E74C3C,stroke-width:2px;
-    classDef config fill:#FCF3CF,stroke:#F39C12,stroke-width:2px;
-    classDef cartesi_network fill:#D5F5E3,stroke:#1D8348,stroke-width:2px;
-    classDef script fill:#E9D8FD,stroke:#8E44AD,stroke-width:2px;
-
+    classDef config fill:#FADBD8,stroke:#E74C3C,stroke-width:2px;
+    classDef production fill:#D0ECE7,stroke:#148F77,stroke-width:2px;
 
     class User user;
-    class F,B,BC runtime;
-    class D,T,CE,PR buildtest;
+    class F,B,BC core;
+    class PR,OL1 mock;
+    class CN,DAPP,CM,OL2 real;
+    class D,T,C deployment;
     class SharedEnv config;
-    class CV1,CV2,CVn,CM cartesi_network;
-    class OL script;
+    class CV1,CV2,CVn production;
 ```
 
-### Brief Component Roles
+### Component Roles by Mode
 
-* **Local Docker Environment**
-  * `frontend`: User Interface.
-  * `backend`: API and business logic.
-  * `blockchain`: Local Ethereum node.
-  * `deployer`: Deploys smart contracts.
-  * `tester`: Runs tests.
-  * `cartesi-env`: Builds Cartesi machine template.
-  * `python-runner`: Simulates off-chain Python logic during development only.
-* **Conceptual Cartesi Network**
-  * `Cartesi Validators`: Execute and verify off-chain computations.
-  * `Cartesi Machine Instance`: Runs the `offchain_logic.py` script in production.
-* **Key Interactions**
-  * User interacts with local services (`frontend`, `backend`, etc.).
-  * Local services interact among themselves and with the `blockchain`.
-  * The `blockchain` (via smart contract events) triggers the Cartesi Validators.
-  * Validators use the Cartesi Machine (running `offchain_logic.py`) for computation.
-  * Validators submit results back to the `blockchain`.
+#### Core Services (Always Running)
+
+* **`frontend`**: React-based user interface with MetaMask integration
+* **`backend`**: Flask API server with admin functions and blockchain interaction
+* **`blockchain`**: Local Hardhat Ethereum node with health checks and persistent volumes
+
+#### Deployment & Utility Services
+
+* **`deployer`**: Contract deployment with automatic `.env` updates and artifact management
+* **`tester`**: Automated testing with mode detection (MOCK/REAL) and comprehensive test suites
+* **`cartesi`**: Cartesi environment for machine building and development instructions
+
+#### MOCK Mode Services (Fast Development)
+
+* **`python-runner`**: Flask server simulating Cartesi logic execution with direct Python script access
+* **`offchain_logic.py`**: Direct execution of matching algorithm for rapid development and testing
+
+#### REAL Mode Services (Production Ready)
+
+* **`cartesi-node`**: Official Cartesi Rollups node with GraphQL endpoints and persistent data storage
+* **`stock-exchange-dapp`**: Cartesi DApp service executing the matching algorithm in verifiable environment
+* **`Cartesi Machine Instance`**: Isolated execution environment running `offchain_logic.py` with cryptographic verification
+
+#### Production Network (Conceptual)
+
+* **`Cartesi Validators`**: Distributed network of validators ensuring computation verification and consensus
+* **Consensus Mechanism**: Multi-validator verification of computation results before blockchain submission
+
+### Key Differences Between Modes
+
+| Aspect | MOCK Mode | REAL Mode |
+|--------|-----------|-----------|
+| **Execution Environment** | Direct Python execution | Cartesi Machine (RISC-V) |
+| **Verification** | None (simulation only) | Cryptographic proofs |
+| **Performance** | Fast development cycles | Production-ready verification |
+| **Use Case** | Development & testing | Production deployment |
+| **Startup Time** | Quick (~30 seconds) | Longer (~60+ seconds) |
+| **Dependencies** | Python + Flask | Cartesi infrastructure |
 
 ## Off-Chain Logic Execution Environments
 
-The order matching logic (`offchain_logic.py`) runs in two different environments depending on the context:
+The order matching logic (`offchain_logic.py`) can run in two distinct environments based on the Docker Compose profile selection:
 
-1. **During Development/Testing**: 
-   * The `python-runner` container runs the off-chain logic directly
-   * This container provides a Flask server on port 5000 that simulates how the logic would behave in a Cartesi Machine
-   * It's used for rapid development and testing without needing the full Cartesi infrastructure
-   * Data flows directly between the backend/frontend and this container via HTTP
-   * Changes to the matching algorithm can be quickly tested without rebuilding the Cartesi Machine template
+### 1. MOCK Mode (Profile: mock, default)
 
-2. **In Production/Actual Execution**:
-   * The off-chain logic is executed inside a Cartesi Machine Instance that's run by the Cartesi Validator nodes
-   * This is part of the "Conceptual Cartesi Off-Chain Network" section in the system architecture
-   * The Cartesi Machine "Contains & Executes" the `offchain_logic.py` script with cryptographic verification
-   * Data flows between the smart contract and the Validator nodes via blockchain events
-   * Input data is ABI-encoded in the smart contract and passed to Cartesi Validators
-   * Output data from the Cartesi Machine is cryptographically verified before being processed by the smart contract
+**Purpose**: Fast development and testing without Cartesi infrastructure overhead
 
-The `cartesi-env` (or `cartesi`) container doesn't run the logic directly - it builds the Cartesi Machine template that contains the `offchain_logic.py` script, producing a template hash that's used by the deployer and Exchange contract. This template hash is a crucial component in the Cartesi verification system, as it ensures that all validators are running the exact same code.
+**Architecture**:
+
+* The `python-runner` service runs the off-chain logic directly in a Flask server
+* Provides HTTP endpoints on port 5000 that simulate Cartesi Machine behavior
+* Changes to the matching algorithm can be tested immediately without rebuilding machine templates
+* Includes comprehensive test suites and health checks
+
+**Data Flow**:
+
+* Input: HTTP requests with JSON order data from backend/frontend
+* Processing: Direct Python execution of `offchain_logic.py`
+* Output: HTTP responses with matched trade results
+* No cryptographic verification (simulation only)
+
+**Use Cases**:
+
+* Rapid algorithm development and debugging
+* Unit testing of matching logic
+* Frontend integration testing
+* Development environment where blockchain verification isn't required
+
+### 2. REAL Mode (Profile: real)
+
+**Purpose**: Production-ready execution with cryptographic verification
+
+**Architecture**:
+
+* `cartesi-node` service runs the official Cartesi Rollups infrastructure
+* `stock-exchange-dapp` service manages the DApp execution environment
+* `offchain_logic.py` executes inside a deterministic Cartesi Machine (RISC-V)
+* Results are cryptographically verified by validator consensus
+
+**Data Flow**:
+
+* Input: ABI-encoded data from Exchange contract via blockchain events
+* Processing: Verifiable execution inside Cartesi Machine
+* Output: Cryptographically proven results submitted back to blockchain
+* Full verification and dispute resolution capabilities
+
+**Use Cases**:
+
+* Production deployment with security guarantees
+* Testing the complete Cartesi integration
+* Demonstrating verifiable off-chain computation
+* Preparing for mainnet deployment
+
+### Technical Implementation Details
+
+**Environment Detection**: The `tester` service automatically detects which mode is running by checking service availability:
+
+```bash
+# Checks for MOCK mode
+if nc -z -w 1 python-runner 5000 2>/dev/null; then
+  export INITIAL_CARTESI_MODE=mock
+# Checks for REAL mode  
+elif nc -z -w 1 cartesi-node 5005 2>/dev/null; then
+  export INITIAL_CARTESI_MODE=real
+fi
+```
+
+**Machine Template Building**: The `cartesi` service provides instructions for building Cartesi Machine templates that work in both development and production:
+
+```bash
+# Build the machine template
+docker compose exec cartesi bash -c "cd cartesi-machine && ./build-machine.sh"
+```
+
+**Mode Switching**: You can easily switch between modes or run both simultaneously:
+
+```bash
+# MOCK mode only (default)
+docker compose up
+
+# REAL mode only
+docker compose --profile real up
+
+# Both modes for comparison
+docker compose --profile mock --profile real up
+```
 
 ### Technical Details of Data Flow Between Environments
 
@@ -235,7 +413,7 @@ This data flow ensures that complex order matching operations can be performed o
 
 ## Project Structure
 
-### High-Level Architecture
+### Architecture Diagrams
 
 ![High-Level Architecture Diagram](./mermaid-diagram-high-level.png)
 
@@ -705,19 +883,45 @@ This project uses Docker Compose to simplify setup and running all components.
     chmod 600 secrets/admin_private_key.txt
     ```
 
-3. **Build & Start Services:**
-    This command builds the necessary Docker images (like the backend) and starts all services defined in `docker compose.yml` in detached mode.
+3. **Choose Your Deployment Mode:**
+    
+    The project supports different deployment modes via Docker Compose profiles:
 
+    **MOCK Mode (Default - Fast Development):**
+    
     ```bash
     docker compose up --build -d
+    # or explicitly
+    docker compose --profile mock up --build -d
     ```
 
-    * This will start:
-        * A Hardhat local blockchain node (`blockchain` service) on port 8545.
-        * A service to deploy contracts (`deployer` service). Wait for its logs to show deployment completion.
-        * The Flask backend API (`backend` service) on port 5001.
-        * The React frontend (`frontend` service) on port 3000.
-        * A Cartesi playground container (`cartesi` service) for potential machine building/interaction.
+    **REAL Mode (Production-Ready Cartesi):**
+    
+    ```bash
+    docker compose --profile real up --build -d
+    ```
+
+    **Both Modes (Testing & Comparison):**
+    
+    ```bash
+    docker compose --profile mock --profile real up --build -d
+    ```
+
+    Each mode starts different services:
+    
+    * **Common Services (All Modes)**:
+        * Hardhat blockchain node (`blockchain`) on port 8545
+        * Contract deployer (`deployer`) - runs once to completion
+        * Flask backend API (`backend`) on port 5001
+        * React frontend (`frontend`) on port 3000
+        * Cartesi environment (`cartesi`) for machine building
+
+    * **MOCK Mode Additional Services**:
+        * Python runner (`python-runner`) on port 5000 - simulates Cartesi logic
+
+    * **REAL Mode Additional Services**:
+        * Cartesi node (`cartesi-node`) on ports 5005/5006 - actual Cartesi infrastructure  
+        * Stock exchange DApp (`stock-exchange-dapp`) on port 5007 - runs verifiable computation
 
 4. **Check Deployment:**
     View the logs of the deployer service to see the contract deployment output and addresses:
@@ -746,7 +950,9 @@ This project uses Docker Compose to simplify setup and running all components.
     * *(Optional)* Use tools like `curl` or Postman to interact with the backend API endpoints (`http://localhost:5001`) like `/orders`, `/trigger-matching`, `/process-results/<index>`.
     * *(Advanced)* Interact directly with the deployed contracts using Hardhat console or scripts.
 
-### Building the Cartesi Machine (Inside Docker)
+### Building the Cartesi Machine (For REAL Mode)
+
+**Note**: Machine building is only required if you plan to use REAL mode with actual Cartesi infrastructure.
 
 1. **Access the Cartesi Container:**
 
@@ -754,31 +960,71 @@ This project uses Docker Compose to simplify setup and running all components.
     docker compose exec cartesi bash
     ```
 
-2. **Navigate and Build:**
+2. **Build the Machine Template:**
     Inside the container's shell:
 
     ```bash
-    cd /app/cartesi-machine
-    # Ensure build-machine.sh has execute permissions if needed: chmod +x build-machine.sh
+    cd /app/stock-token-exchange/cartesi-machine
+    # Ensure build script has execute permissions
+    chmod +x build-machine.sh
     ./build-machine.sh
     ```
 
-    * This script *should* use tools within the `cartesi/playground` image to build the machine template based on `offchain_logic.py`.
-    * **Note:** This script requires the necessary base images (ROM, Linux kernel) and Cartesi tools (`cartesi-machine`, `genext2fs`) to be available within the `cartesi/playground:0.5.0` image or mounted appropriately. You might need to adjust the `build-machine.sh` script or the Docker setup depending on the exact requirements.
+    The script will:
+    * Build a Cartesi Machine template containing `offchain_logic.py`
+    * Output a template hash for use in contract deployment
+    * Store the machine template for REAL mode execution
 
-3. **Update Template Hash:**
-    * Copy the `templateHash` output by the build script.
-    * Stop the services: `docker compose down`
-    * Edit `stock-token-exchange/deploy/01_deploy_contracts.ts` and replace the placeholder `CARTESI_TEMPLATE_HASH` with the actual hash.
-    * Restart the services: `docker compose up --build -d` (The deployer should now use the correct hash).
+3. **Update Template Hash (If Building Custom Machine):**
+    * Copy the `templateHash` output by the build script
+    * Update the deployment configuration with the new hash
+    * Restart services to use the updated configuration
+
+### Profile-Specific Testing
+
+**Test MOCK Mode:**
+
+```bash
+# Start MOCK mode services
+docker compose --profile mock up -d
+
+# Run tests that will automatically detect MOCK mode
+docker compose exec tester npx hardhat test --network localhost
+```
+
+**Test REAL Mode:**
+
+```bash
+# Start REAL mode services (includes Cartesi infrastructure)
+docker compose --profile real up -d
+
+# Wait for services to be healthy, then run tests
+docker compose exec tester npx hardhat test --network localhost
+```
+
+**Compare Both Modes:**
+
+```bash
+# Start both modes simultaneously
+docker compose --profile mock --profile real up -d
+
+# Tests will detect available services and can compare results
+docker compose exec tester npx hardhat test --network localhost
+```
 
 ### Stopping Services
+
+Stop all services regardless of profile:
 
 ```bash
 docker compose down
 ```
 
-This stops and removes the containers, networks, and volumes defined in the compose file.
+Clean up volumes and networks:
+
+```bash
+docker compose down -v
+```
 
 ## Backend API Documentation
 
@@ -786,7 +1032,7 @@ The backend API provides several endpoints to interact with the stock exchange s
 
 ### Base URL
 
-```
+```text
 http://localhost:5001
 ```
 
@@ -1037,7 +1283,7 @@ The Stock Token Exchange system uses various environment variables to configure 
 | `FRONTEND_PORT` | Port on which the frontend web app is exposed | `3000` | Docker Compose |
 | `BLOCKCHAIN_PORT` | Port on which the local Hardhat node is exposed | `8545` | Docker Compose |
 
-### Security Considerations
+### Configuration Security Best Practices
 
 * **Admin Private Key**: For production environments, use the Docker secret or external key file methods rather than environment variables to store the admin private key.
 * **File Permissions**: Ensure that any file containing private keys has restricted permissions (e.g., `chmod 600 secrets/admin_private_key.txt`).
@@ -1084,7 +1330,7 @@ docker compose logs deployer
 
 Expected output:
 
-```
+```text
 deployer_1  | Deploying StockToken...
 deployer_1  | StockToken deployed at: 0x5FbDB2315678afecb367f032d93F642f64180aa3
 deployer_1  | Deploying Exchange...
@@ -1489,9 +1735,9 @@ The key points illustrated:
 * **Error Handling:** Implement robust error handling across all components.
 * **`Exchange.sol` Deposit/Withdraw:** ✅ Implemented `depositETH`, `withdrawETH`, `depositToken`, `withdrawToken` functions with proper event emission and security checks.
 
-## for developers
+## For Developers
 
-##### Running the Application (Docker Compose)
+### Running the Application (Docker Compose)
 
 1. **Prerequisites:**
     * Docker & Docker Compose installed.
@@ -1647,7 +1893,7 @@ This allows you to run commands inside the container. Use `exit` to leave the co
 graph TD
     User["User/Developer"]
 
-    subgraph "Local Development & Build Environment (docker-compose.yml)"
+    subgraph "Local Development & Build Environment (docker compose.yml)"
         F[("frontend"<br>React UI)]
         B[("backend"<br>Flask API)]
         BC[("blockchain"<br>Hardhat Node)]
