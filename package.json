@@ -1,0 +1,29 @@
+{
+  "name": "cartesi-stock-exchange",
+  "version": "1.0.0",
+  "description": "Cartesi Stock Exchange - Multi-project workspace",
+  "private": true,
+  "workspaces": [
+    "stock-token-exchange"
+  ],
+  "devDependencies": {
+    "strip-bom": "^4.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cartesi/cartesi-stock-exchange.git"
+  },
+  "keywords": [
+    "cartesi",
+    "blockchain",
+    "stock-exchange",
+    "defi",
+    "rollups"
+  ],
+  "author": "Cartesi Foundation",
+  "license": "MIT"
+}
